@@ -1,5 +1,5 @@
 {
-  "domain": "ha_kia_hyundai",
+  "domain": "ha_kia_hyundai_new",
   "name": "Kia US",
   "codeowners": ["@dahlb"],
   "config_flow": true,
@@ -8,5 +8,5 @@
   "issue_tracker": "https://github.com/dahlb/ha_kia_hyundai/issues",
   "loggers": ["ha_kia_hyundai", "kia_hyundai_api"],
   "requirements": ["kia-hyundai-api==1.6.4"],
-  "version": "1.14.1"
+  "version": "1.15.1"
 }
