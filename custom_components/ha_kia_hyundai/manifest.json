@@ -8,5 +8,5 @@
   "issue_tracker": "https://github.com/dahlb/ha_kia_hyundai/issues",
   "loggers": ["ha_kia_hyundai", "kia_hyundai_api"],
   "requirements": ["kia-hyundai-api==1.6.4"],
-  "version": "1.15.1"
+  "version": "1.0.0"
 }
