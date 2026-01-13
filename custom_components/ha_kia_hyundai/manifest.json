@@ -1,7 +1,7 @@
 {
   "domain": "ha_kia_hyundai",
   "name": "Kia US",
-  "codeowners": ["@dahlb"],
+  "codeowners": ["@MarcusTaz"],
   "config_flow": true,
   "documentation": "https://github.com/dahlb/ha_kia_hyundai",
   "iot_class": "cloud_polling",
