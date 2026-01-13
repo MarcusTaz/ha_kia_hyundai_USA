@@ -237,7 +237,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         
         return self.async_create_entry(title=first_name, data=first_data)
     
-    async def async_step_import(self, import_data: dict[str, Any]) -> FlowResult:
+    async def async_step_import(self, import_data: dict[str, Any]):
         """Handle import of additional vehicles."""
         title = import_data.get("title", "Kia Vehicle")
         vehicle_id = import_data.get(CONF_VEHICLE_ID)
