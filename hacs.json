@@ -1,9 +1,9 @@
 {
   "name": "Kia Hyundai (USA) - OTP Fixed",
   "content_in_root": false,
-  "filename": "ha_kia_hyundai",
+  "filename": "ha_kia_hyundai_new",
   "render_readme": true,
-  "domains": ["ha_kia_hyundai"],
+  "domains": ["ha_kia_hyundai_new"],
   "homeassistant": "2023.1.0",
   "iot_class": "cloud_polling"
 }
