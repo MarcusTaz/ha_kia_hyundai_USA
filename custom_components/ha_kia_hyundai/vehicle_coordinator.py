@@ -8,16 +8,16 @@ from homeassistant.util import dt as dt_util
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, REQUEST_REFRESH_DEFAULT_COOLDOWN
-from hyundai_kia_connect_api import VehicleManager
+from kia_hyundai_api import UsKia
 
 from custom_components.ha_kia_hyundai import DOMAIN
 from custom_components.ha_kia_hyundai.const import (
     DELAY_BETWEEN_ACTION_IN_PROGRESS_CHECKING,
     TEMPERATURE_MAX,
-    TEMPERATURE_MIN,
-    SeatSettings
+    TEMPERATURE_MIN
 )
 from custom_components.ha_kia_hyundai.util import safely_get_json_value, convert_last_updated_str_to_datetime
+from kia_hyundai_api.const import SeatSettings
 
 _LOGGER = getLogger(__name__)
 
@@ -39,14 +39,14 @@ class VehicleCoordinator(DataUpdateCoordinator):
             vehicle_id: str,
             vehicle_name: str,
             vehicle_model: str,
-            api_connection: VehicleManager,  # EU library
+            api_connection: UsKia,
             scan_interval: timedelta,
     ) -> None:
         """Initialize the device."""
         self.vehicle_id: str = vehicle_id
         self.vehicle_name: str = vehicle_name
         self.vehicle_model: str = vehicle_model
-        self.api_connection: VehicleManager = api_connection
+        self.api_connection: UsKia = api_connection
         request_refresh_debouncer = Debouncer(
             hass,
             _LOGGER,
