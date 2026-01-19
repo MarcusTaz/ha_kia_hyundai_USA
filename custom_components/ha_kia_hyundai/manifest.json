@@ -1,12 +1,13 @@
 {
   "domain": "ha_kia_hyundai",
-  "name": "Kia US with EU Library",
+  "name": "Kia US",
   "codeowners": ["@MarcusTaz"],
   "config_flow": true,
   "documentation": "https://github.com/dahlb/ha_kia_hyundai",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/dahlb/ha_kia_hyundai/issues",
-  "loggers": ["ha_kia_hyundai", "hyundai_kia_connect_api"],
-  "requirements": ["hyundai_kia_connect_api==4.3.11"],
-  "version": "1.1.0"
+  "loggers": ["ha_kia_hyundai", "kia_hyundai_api"],
+  "requirements": ["kia-hyundai-api==1.6.4"],
+  "version": "1.0.0"
 }
+
