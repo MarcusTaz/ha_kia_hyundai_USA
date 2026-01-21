@@ -22,6 +22,7 @@ from homeassistant.core import callback
 
 from hyundai_kia_connect_api import VehicleManager
 from hyundai_kia_connect_api.ApiImpl import OTPRequest
+from hyundai_kia_connect_api.const import OTP_NOTIFY_TYPE
 from hyundai_kia_connect_api.exceptions import AuthenticationError
 
 from .const import (
@@ -183,16 +184,14 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             _LOGGER.info("User selected OTP method: %s", method)
 
             try:
-                # Import the enum for OTP type
-                from hyundai_kia_connect_api.const import OTP_NOTIFY_TYPE
-
+                # Use the proper enum from the library
                 if method == "EMAIL":
                     otp_type = OTP_NOTIFY_TYPE.EMAIL
                 else:
                     otp_type = OTP_NOTIFY_TYPE.SMS
 
-                # Send OTP using explicit method
-                _LOGGER.info("Sending OTP via %s...", method)
+                # Send OTP using explicit method (same as official kia_uvo)
+                _LOGGER.info("Sending OTP via %s (type=%s)...", method, otp_type)
                 await self.hass.async_add_executor_job(
                     self.vehicle_manager.send_otp,
                     otp_type
