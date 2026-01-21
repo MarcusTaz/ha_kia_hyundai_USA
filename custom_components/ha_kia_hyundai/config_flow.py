@@ -201,15 +201,25 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         )
 
     async def _initialize_and_get_vehicles(self):
-        """Initialize VehicleManager and fetch vehicles."""
+        """Initialize VehicleManager and fetch vehicles.
+
+        The EU library uses synchronous requests, so we run blocking
+        calls in an executor to avoid blocking the event loop.
+        """
         if self.vehicle_manager is None:
             raise ConfigEntryAuthFailed("VehicleManager not created")
 
         _LOGGER.info("Checking/refreshing token...")
-        await self.vehicle_manager.check_and_refresh_token()
+        # Run blocking call in executor
+        await self.hass.async_add_executor_job(
+            self.vehicle_manager.check_and_refresh_token
+        )
 
         _LOGGER.info("Initializing vehicles...")
-        await self.vehicle_manager.initialize()
+        # Run blocking call in executor
+        await self.hass.async_add_executor_job(
+            self.vehicle_manager.initialize
+        )
 
         _LOGGER.info(
             "Found %d vehicles",

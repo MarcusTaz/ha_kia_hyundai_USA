@@ -111,19 +111,23 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     )
 
     try:
-        # Create VehicleManager using EU library
+        # Create VehicleManager using EU library (synchronous creation)
         # No OTP handler during setup - auth should already be complete
-        vehicle_manager = await create_vehicle_manager(
+        vehicle_manager = create_vehicle_manager(
             username=username,
             password=password,
             brand=brand,
             pin=pin,
         )
 
-        # Initialize and get vehicles
+        # Initialize and get vehicles (run blocking calls in executor)
         _LOGGER.debug("Initializing VehicleManager")
-        await vehicle_manager.check_and_refresh_token()
-        await vehicle_manager.initialize()
+        await hass.async_add_executor_job(
+            vehicle_manager.check_and_refresh_token
+        )
+        await hass.async_add_executor_job(
+            vehicle_manager.initialize
+        )
 
         # Find our vehicle
         _LOGGER.debug("Looking for vehicle %s in manager.vehicles", vehicle_id)
@@ -149,6 +153,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
 
         # Create the API adapter
         api_adapter = EUApiAdapter(
+            hass=hass,
             vehicle_manager=vehicle_manager,
             vehicle_id=vehicle_id,
         )
