@@ -142,7 +142,10 @@ class UsKia:
         return self._ssl_context
 
     def _api_headers(self, vehicle_key: str | None = None) -> dict:
-        """Generate API headers matching the original Android app."""
+        """Generate API headers matching the original Android app.
+        
+        Used for vehicle status and other non-OTP requests.
+        """
         headers = {
             "content-type": "application/json;charset=UTF-8",
             "accept": "application/json, text/plain, */*",
@@ -172,9 +175,46 @@ class UsKia:
             headers["vinkey"] = vehicle_key
         return headers
     
+    def _ios_headers(self) -> dict:
+        """Generate iOS headers for OTP authentication.
+        
+        The iOS headers are required for OTP to work properly.
+        Android headers don't work for OTP authentication.
+        """
+        offset = int(time.localtime().tm_gmtoff / 60 / 60)
+        headers = {
+            "content-type": "application/json;charset=UTF-8",
+            "accept": "application/json",
+            "accept-encoding": "gzip, deflate, br",
+            "accept-language": "en-US,en;q=0.9",
+            "apptype": "L",
+            "appversion": "7.22.0",
+            "clientid": "MWAMOBILE",
+            "from": "SPA",
+            "host": API_URL_HOST,
+            "language": "0",
+            "offset": str(offset),
+            "ostype": "iOS",
+            "osversion": "18.1",
+            "secretkey": "98er-w34rf-ibf3-3f6h",
+            "to": "APIGW",
+            "tokentype": "G",
+            "user-agent": "okhttp/4.10.0",
+            "deviceid": self.device_id,
+            "date": datetime.now(tz=pytz.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"),
+        }
+        if self.session_id is not None:
+            headers["sid"] = self.session_id
+        if self.refresh_token is not None:
+            headers["rmtoken"] = self.refresh_token
+        return headers
+    
     def _otp_headers(self) -> dict:
-        """Generate headers specifically for OTP requests."""
-        headers = self._api_headers()
+        """Generate headers specifically for OTP requests.
+        
+        Uses iOS headers as base since OTP requires iOS-style authentication.
+        """
+        headers = self._ios_headers()
         if self.otp_key is not None:
             headers["otpkey"] = self.otp_key
         if self.notify_type is not None:
