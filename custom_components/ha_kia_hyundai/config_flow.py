@@ -1,8 +1,12 @@
-"""Config flow for Kia/Hyundai US integration using EU library."""
+"""Config flow for Kia/Hyundai US integration using EU library.
 
-import asyncio
+This uses the same OTP flow as the official kia_uvo integration:
+1. login() returns OTPRequest if OTP needed
+2. send_otp(method) sends OTP to selected destination
+3. verify_otp_and_complete_login(code) completes authentication
+"""
+
 import logging
-import threading
 from typing import Any
 
 import voluptuous as vol
@@ -17,11 +21,12 @@ from homeassistant.const import (
 from homeassistant.core import callback
 
 from hyundai_kia_connect_api import VehicleManager
+from hyundai_kia_connect_api.ApiImpl import OTPRequest
+from hyundai_kia_connect_api.exceptions import AuthenticationError
 
 from .const import (
     CONF_BRAND,
     CONF_PIN,
-    CONF_OTP_CODE,
     DOMAIN,
     CONFIG_FLOW_VERSION,
     CONF_VEHICLE_ID,
@@ -33,11 +38,6 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-# OTP delivery method constants
-CONF_OTP_METHOD = "otp_method"
-OTP_METHOD_EMAIL = "EMAIL"
-OTP_METHOD_PHONE = "PHONE"
 
 
 class KiaUvoOptionFlowHandler(OptionsFlow):
@@ -76,19 +76,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         """Initialize config flow."""
         self.data: dict[str, Any] = {}
         self.vehicle_manager: VehicleManager | None = None
-        self.login_task: asyncio.Task | None = None
-        # OTP flow state - thread-safe
-        self._otp_method: str | None = None
-        self._otp_method_event = threading.Event()
-        self._otp_code: str | None = None
-        self._otp_code_event = threading.Event()
-        # OTP info from API
-        self._otp_email: str | None = None
-        self._otp_phone: str | None = None
-        self._otp_has_email: bool = False
-        self._otp_has_phone: bool = False
-        # Error tracking
-        self._login_error: Exception | None = None
+        self._otp_request: OTPRequest | None = None
 
     @staticmethod
     @callback
@@ -98,12 +86,12 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
 
     async def async_step_reauth(self, user_input: dict[str, Any] | None = None):
         """Handle re-authentication."""
-        _LOGGER.debug(f"Reauth with input: {user_input}")
+        _LOGGER.debug("Reauth with input: %s", user_input)
         return await self.async_step_user(user_input)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Handle user step - credentials input."""
-        _LOGGER.debug(f"User step with input: {user_input}")
+        _LOGGER.debug("User step with input: %s", user_input)
 
         data_schema = vol.Schema({
             vol.Required(CONF_USERNAME): str,
@@ -128,66 +116,6 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 CONF_PIN: pin,
             }
 
-            # Reset OTP state
-            self._otp_method = None
-            self._otp_method_event.clear()
-            self._otp_code = None
-            self._otp_code_event.clear()
-            self._login_error = None
-
-            # Create SYNCHRONOUS OTP handler (EU library calls this synchronously)
-            def otp_handler(context: dict[str, Any]) -> dict[str, Any]:
-                """Handle OTP requests from the EU library.
-
-                This is called SYNCHRONOUSLY from the EU library's login thread.
-                We use threading.Event to wait for user input from the config flow.
-                """
-                stage = context.get("stage", "")
-                _LOGGER.info(f"OTP handler called with stage: {stage}")
-                _LOGGER.debug(f"OTP context: {context}")
-
-                if stage == "choose_destination":
-                    # Store available options for the UI
-                    self._otp_has_email = context.get("hasEmail", False)
-                    self._otp_has_phone = context.get("hasPhone", False)
-                    self._otp_email = context.get("email", "")
-                    self._otp_phone = context.get("phone", "")
-
-                    _LOGGER.info(
-                        f"OTP options - Email: {self._otp_email} ({self._otp_has_email}), "
-                        f"Phone: {self._otp_phone} ({self._otp_has_phone})"
-                    )
-
-                    # Wait for user to choose delivery method (with timeout)
-                    _LOGGER.info("Waiting for user to select OTP delivery method...")
-                    if self._otp_method_event.wait(timeout=120):
-                        method = self._otp_method
-                        _LOGGER.info(f"User selected OTP method: {method}")
-                        return {"notify_type": method}
-                    else:
-                        _LOGGER.error("Timeout waiting for OTP method selection")
-                        return {}
-
-                elif stage == "input_code":
-                    # Wait for OTP code to be entered (with timeout)
-                    _LOGGER.info("Waiting for user to enter OTP code...")
-                    _LOGGER.info(f"OTP context for input_code: {context}")
-                    if self._otp_code_event.wait(timeout=120):
-                        code = self._otp_code
-                        # Clean the code - remove any whitespace
-                        if code:
-                            code = code.strip()
-                        _LOGGER.info(f"OTP code received: '{code[:2] if code else ''}***' (length: {len(code) if code else 0})")
-                        _LOGGER.info("Returning otp_code to library")
-                        result = {"otp_code": code}
-                        _LOGGER.info(f"Returning: {{'otp_code': '{code[:2] if code else ''}***'}}")
-                        return result
-                    else:
-                        _LOGGER.error("Timeout waiting for OTP code")
-                        return {}
-
-                return {}
-
             try:
                 _LOGGER.info("Creating VehicleManager for %s (%s)", brand_name, brand)
                 self.vehicle_manager = VehicleManager(
@@ -196,23 +124,31 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                     username=username,
                     password=password,
                     pin=pin,
-                    otp_handler=otp_handler,
+                    # NO otp_handler - we use explicit methods instead
                 )
 
-                # Start login in background thread via executor
-                _LOGGER.info("Starting VehicleManager login (may trigger OTP)...")
-                self.login_task = self.hass.async_create_task(
-                    self._run_login_in_executor()
+                # Attempt login - returns Token or OTPRequest
+                _LOGGER.info("Attempting login...")
+                result = await self.hass.async_add_executor_job(
+                    self.vehicle_manager.login
                 )
 
-                # Give the login task a moment to start and potentially call OTP handler
-                await asyncio.sleep(3)
+                if isinstance(result, OTPRequest):
+                    # OTP is required
+                    _LOGGER.info("OTP required. Email: %s, SMS: %s",
+                                 result.has_email, result.has_sms)
+                    self._otp_request = result
+                    return await self.async_step_select_otp_method()
+                else:
+                    # Login succeeded without OTP (cached token)
+                    _LOGGER.info("Login succeeded without OTP")
+                    return await self._finalize_setup()
 
-                # Proceed to OTP method selection step
-                return await self.async_step_otp_method()
-
+            except AuthenticationError as e:
+                _LOGGER.error("Authentication error: %s", e)
+                errors["base"] = "auth"
             except Exception as e:
-                _LOGGER.exception(f"Error during login setup: {e}")
+                _LOGGER.exception("Error during login: %s", e)
                 errors["base"] = "auth"
 
         return self.async_show_form(
@@ -221,143 +157,129 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             errors=errors,
         )
 
-    async def _run_login_in_executor(self):
-        """Run the blocking login in an executor thread."""
-        try:
-            _LOGGER.info("Running login in executor...")
-            await self.hass.async_add_executor_job(self._do_login)
-            _LOGGER.info("Login completed successfully")
-        except Exception as e:
-            _LOGGER.error(f"Login failed: {e}")
-            self._login_error = e
-
-    def _do_login(self):
-        """Perform the actual login (blocking, runs in executor)."""
-        # Note: check_and_refresh_token() calls initialize() when token is None,
-        # which calls login(). We should NOT call initialize() separately as
-        # that would trigger a second login attempt!
-        _LOGGER.info("Starting login via check_and_refresh_token...")
-        self.vehicle_manager.check_and_refresh_token()
-        _LOGGER.info(
-            "Login complete. Found %d vehicles",
-            len(self.vehicle_manager.vehicles) if self.vehicle_manager.vehicles else 0
-        )
-
-    async def async_step_otp_method(self, user_input: dict[str, Any] | None = None):
-        """Handle OTP delivery method selection."""
-        _LOGGER.debug(f"OTP method step with input: {user_input}")
+    async def async_step_select_otp_method(self, user_input: dict[str, Any] | None = None):
+        """Let user choose email or SMS for OTP delivery."""
+        _LOGGER.debug("OTP method step with input: %s", user_input)
 
         errors: dict[str, str] = {}
 
-        # Check if login already completed (no OTP needed)
-        if self.login_task and self.login_task.done():
-            if self._login_error:
-                _LOGGER.error(f"Login failed: {self._login_error}")
-                errors["base"] = "auth"
-            else:
-                # Login succeeded without OTP
-                return await self._finalize_setup()
+        # Build available methods
+        otp_methods = {}
+        if self._otp_request and self._otp_request.has_email:
+            otp_methods["EMAIL"] = "Email"
+        if self._otp_request and self._otp_request.has_sms:
+            otp_methods["SMS"] = "Phone/SMS"
 
-        # Build options based on what's available
-        otp_options = {}
-
-        if self._otp_has_email and self._otp_email:
-            otp_options["EMAIL"] = f"Email ({self._otp_email})"
-        if self._otp_has_phone and self._otp_phone:
-            otp_options["PHONE"] = f"Phone/SMS ({self._otp_phone})"
-
-        # Fallback if detection didn't work yet
-        if not otp_options:
-            otp_options = {
-                "EMAIL": "Email",
-                "PHONE": "Phone/SMS",
-            }
+        # Fallback if detection failed
+        if not otp_methods:
+            otp_methods = {"EMAIL": "Email", "SMS": "Phone/SMS"}
 
         data_schema = vol.Schema({
-            vol.Required(CONF_OTP_METHOD): vol.In(otp_options),
+            vol.Required("method"): vol.In(otp_methods),
         })
 
         if user_input is not None:
-            # Store the selected method and signal the waiting thread
-            self._otp_method = user_input[CONF_OTP_METHOD]
-            self._otp_method_event.set()
-            _LOGGER.info(f"User selected OTP delivery: {self._otp_method}")
-
-            # Give time for OTP to be sent
-            await asyncio.sleep(2)
-
-            # Proceed to OTP code entry
-            return await self.async_step_otp_code()
-
-        return self.async_show_form(
-            step_id="otp_method",
-            data_schema=data_schema,
-            errors=errors,
-        )
-
-    async def async_step_otp_code(self, user_input: dict[str, Any] | None = None):
-        """Handle OTP code entry."""
-        _LOGGER.debug(f"OTP code step with input: {user_input}")
-
-        data_schema = vol.Schema({
-            vol.Required(CONF_OTP_CODE): str,
-        })
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            # Store OTP code and signal the waiting thread
-            self._otp_code = user_input[CONF_OTP_CODE]
-            self._otp_code_event.set()
-            _LOGGER.info("OTP code submitted, waiting for login to complete...")
+            method = user_input["method"]
+            _LOGGER.info("User selected OTP method: %s", method)
 
             try:
-                # Wait for the login task to complete
-                await asyncio.wait_for(self.login_task, timeout=60)
+                # Import the enum for OTP type
+                from hyundai_kia_connect_api.const import OTP_NOTIFY_TYPE
 
-                if self._login_error:
-                    _LOGGER.error(f"Login failed: {self._login_error}")
-                    errors["base"] = "auth"
+                if method == "EMAIL":
+                    otp_type = OTP_NOTIFY_TYPE.EMAIL
                 else:
-                    return await self._finalize_setup()
+                    otp_type = OTP_NOTIFY_TYPE.SMS
 
-            except asyncio.TimeoutError:
-                _LOGGER.error("Timeout waiting for login to complete")
-                errors["base"] = "timeout"
+                # Send OTP using explicit method
+                _LOGGER.info("Sending OTP via %s...", method)
+                await self.hass.async_add_executor_job(
+                    self.vehicle_manager.send_otp,
+                    otp_type
+                )
+                _LOGGER.info("OTP sent successfully")
+
+                return await self.async_step_enter_otp()
+
             except Exception as e:
-                _LOGGER.exception(f"Error during OTP verification: {e}")
+                _LOGGER.exception("Error sending OTP: %s", e)
                 errors["base"] = "auth"
 
-        method_desc = "email" if self._otp_method == "EMAIL" else "phone"
         return self.async_show_form(
-            step_id="otp_code",
+            step_id="select_otp_method",
             data_schema=data_schema,
             errors=errors,
-            description_placeholders={
-                "method": method_desc,
-            },
+        )
+
+    async def async_step_enter_otp(self, user_input: dict[str, Any] | None = None):
+        """Prompt user to enter the OTP code."""
+        _LOGGER.debug("Enter OTP step with input: %s", user_input)
+
+        data_schema = vol.Schema({
+            vol.Required("otp"): str,
+        })
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            otp_code = user_input["otp"].strip()
+            _LOGGER.info("Verifying OTP code (length: %d)...", len(otp_code))
+
+            try:
+                # Verify OTP and complete login using explicit method
+                await self.hass.async_add_executor_job(
+                    self.vehicle_manager.verify_otp_and_complete_login,
+                    otp_code
+                )
+                _LOGGER.info("OTP verified successfully!")
+
+                return await self._finalize_setup()
+
+            except AuthenticationError as e:
+                _LOGGER.error("OTP verification failed: %s", e)
+                errors["base"] = "invalid_otp"
+            except Exception as e:
+                _LOGGER.exception("Error verifying OTP: %s", e)
+                errors["base"] = "auth"
+
+        return self.async_show_form(
+            step_id="enter_otp",
+            data_schema=data_schema,
+            errors=errors,
         )
 
     async def _finalize_setup(self):
         """Finalize setup after successful login."""
-        if self.vehicle_manager is None or not self.vehicle_manager.vehicles:
-            _LOGGER.error("No vehicles found after login")
-            return self.async_abort(reason="no_vehicles")
+        _LOGGER.info("Finalizing setup...")
 
-        # Build vehicles list
-        vehicles = []
-        for vid, vehicle in self.vehicle_manager.vehicles.items():
-            _LOGGER.info(
-                "Discovered vehicle: id=%s, name=%s, model=%s",
-                vid, vehicle.name, vehicle.model
+        try:
+            # Initialize vehicles
+            await self.hass.async_add_executor_job(
+                self.vehicle_manager.initialize_vehicles
             )
-            vehicles.append({
-                "vehicleIdentifier": vid,
-                "nickName": vehicle.name,
-                "modelName": vehicle.model,
-            })
 
-        self.data[CONFIG_FLOW_TEMP_VEHICLES] = vehicles
-        return await self.async_step_pick_vehicle()
+            if not self.vehicle_manager.vehicles:
+                _LOGGER.error("No vehicles found after login")
+                return self.async_abort(reason="no_vehicles")
+
+            # Build vehicles list
+            vehicles = []
+            for vid, vehicle in self.vehicle_manager.vehicles.items():
+                _LOGGER.info(
+                    "Discovered vehicle: id=%s, name=%s, model=%s",
+                    vid, vehicle.name, vehicle.model
+                )
+                vehicles.append({
+                    "vehicleIdentifier": vid,
+                    "nickName": vehicle.name,
+                    "modelName": vehicle.model,
+                })
+
+            self.data[CONFIG_FLOW_TEMP_VEHICLES] = vehicles
+            return await self.async_step_pick_vehicle()
+
+        except Exception as e:
+            _LOGGER.exception("Error initializing vehicles: %s", e)
+            return self.async_abort(reason="unknown")
 
     async def async_step_pick_vehicle(self, user_input: dict[str, Any] | None = None):
         """Add ALL vehicles at once - no picking needed."""

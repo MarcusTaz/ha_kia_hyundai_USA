@@ -11,18 +11,18 @@
           "pin": "PIN (optional, required for some operations)"
         }
       },
-      "otp_method": {
+      "select_otp_method": {
         "title": "Select OTP Delivery",
         "description": "Choose where to send the One Time Password.",
         "data": {
-          "otp_method": "Send OTP to"
+          "method": "Send OTP to"
         }
       },
-      "otp_code": {
+      "enter_otp": {
         "title": "Enter OTP Code",
-        "description": "Enter the One Time Password sent to your {method}.",
+        "description": "Enter the One Time Password you received.",
         "data": {
-          "otp_code": "OTP Code"
+          "otp": "OTP Code"
         }
       },
       "pick_vehicle": {
@@ -40,12 +40,13 @@
     "abort": {
       "reauth_successful": "Re-authentication was successful.",
       "already_configured": "All vehicles are already configured.",
-      "unknown": "Unknown error occurred."
+      "unknown": "Unknown error occurred.",
+      "no_vehicles": "No vehicles found in your account."
     },
     "error": {
       "auth": "Login failed. Please verify your credentials and try again.",
-      "timeout": "Authentication timed out. Please try again.",
-      "no_vehicles": "No vehicles found in your account."
+      "invalid_otp": "Invalid OTP code. Please try again.",
+      "timeout": "Authentication timed out. Please try again."
     }
   },
   "options": {
