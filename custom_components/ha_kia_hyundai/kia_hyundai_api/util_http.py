@@ -1,7 +1,7 @@
 import logging
 
 from functools import wraps
-from aiohttp import ClientError, ClientResponse
+from aiohttp import ClientError, ClientResponse, ContentTypeError
 
 from .errors import AuthError, ActionAlreadyInProgressError
 from .util import clean_dictionary_for_logging
@@ -40,6 +40,19 @@ def request_with_logging(func):
         _LOGGER.debug(
             f"response headers:{clean_dictionary_for_logging(response.headers)}"
         )
+        
+        # Check content type before trying to parse JSON
+        content_type = response.headers.get("Content-Type", "")
+        if "application/json" not in content_type:
+            # API returned non-JSON (likely HTML error page or session expired)
+            response_text = await response.text()
+            _LOGGER.warning(
+                f"API returned non-JSON response (Content-Type: {content_type}). "
+                f"First 500 chars: {response_text[:500]}"
+            )
+            # Treat this as an auth error to trigger session refresh
+            raise AuthError(f"API returned non-JSON response (Content-Type: {content_type})")
+        
         try:
             response_json = await response.json()
             _LOGGER.debug(
@@ -71,8 +84,13 @@ def request_with_logging(func):
                 self.last_action = None
                 raise ActionAlreadyInProgressError(f"api error:{response_json['status']['errorMessage']}")
             raise ClientError(f"api error:{response_json['status']['errorMessage']}")
-        except RuntimeError:
+        except ContentTypeError as e:
+            # This shouldn't happen now due to the check above, but handle it anyway
             response_text = await response.text()
-            _LOGGER.debug(f"error: unknown error response {response_text}")
-            raise ClientError(f"unknown error response {response_text}")
+            _LOGGER.warning(f"ContentTypeError parsing response: {e}. Text: {response_text[:500]}")
+            raise AuthError(f"API returned invalid response: {e}")
+        except (RuntimeError, KeyError, TypeError) as e:
+            response_text = await response.text()
+            _LOGGER.debug(f"error: unknown error response {e}, text: {response_text[:500]}")
+            raise ClientError(f"unknown error response: {e}")
     return request_with_logging_wrapper
