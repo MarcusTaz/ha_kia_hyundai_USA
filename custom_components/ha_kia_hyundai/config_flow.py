@@ -326,17 +326,18 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             )
 
         # For new setup: add ALL vehicles
+        # First, check which vehicles are already configured
         created_entries = []
         for vehicle in vehicles:
             vehicle_id = vehicle["vehicleIdentifier"]
             vehicle_name = f"{vehicle['nickName']} ({vehicle['modelName']})"
 
-            _LOGGER.info("Preparing to add vehicle: %s (%s)", vehicle_name, vehicle_id)
+            _LOGGER.info("Checking vehicle: %s (%s)", vehicle_name, vehicle_id)
 
-            # Check if this vehicle is already configured
-            existing_entry = await self.async_set_unique_id(vehicle_id)
-            if existing_entry:
-                _LOGGER.info("Vehicle %s already configured, skipping", vehicle_name)
+            # Check if this vehicle is already configured using _async_current_ids
+            existing_ids = self._async_current_ids()
+            if vehicle_id in existing_ids:
+                _LOGGER.info("Vehicle %s already configured (id in current_ids), skipping", vehicle_name)
                 continue
 
             # Create entry data for this vehicle
@@ -349,25 +350,42 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 CONF_TOKEN: self.data.get(CONF_TOKEN),  # Include saved token
             }
 
-            created_entries.append((vehicle_name, entry_data))
+            created_entries.append((vehicle_id, vehicle_name, entry_data))
 
         if not created_entries:
+            _LOGGER.info("All vehicles already configured")
             return self.async_abort(reason="already_configured")
 
-        _LOGGER.info("Creating entries for %d new vehicles", len(created_entries))
+        _LOGGER.info("Creating entries for %d new vehicles: %s",
+                    len(created_entries),
+                    [name for _, name, _ in created_entries])
 
         # Create first entry via flow return (required by HA)
-        first_name, first_data = created_entries[0]
+        first_id, first_name, first_data = created_entries[0]
 
-        # Schedule additional entries via import flows
-        for vehicle_name, entry_data in created_entries[1:]:
-            _LOGGER.info("Scheduling auto-add for vehicle: %s", vehicle_name)
-            self.hass.async_create_task(
-                self.hass.config_entries.flow.async_init(
+        # Set unique_id for first entry
+        await self.async_set_unique_id(first_id)
+        self._abort_if_unique_id_configured()
+
+        # Schedule additional entries via import flows with a small delay
+        # to avoid race conditions
+        async def schedule_import(vehicle_id: str, vehicle_name: str, entry_data: dict):
+            """Schedule an import flow for a vehicle."""
+            try:
+                _LOGGER.info("Starting import flow for vehicle: %s (%s)", vehicle_name, vehicle_id)
+                result = await self.hass.config_entries.flow.async_init(
                     DOMAIN,
                     context={"source": "import"},
                     data={"title": vehicle_name, **entry_data},
                 )
+                _LOGGER.info("Import flow result for %s: %s", vehicle_name, result)
+            except Exception as e:
+                _LOGGER.error("Failed to import vehicle %s: %s", vehicle_name, e)
+
+        for vehicle_id, vehicle_name, entry_data in created_entries[1:]:
+            _LOGGER.info("Scheduling import for vehicle: %s", vehicle_name)
+            self.hass.async_create_task(
+                schedule_import(vehicle_id, vehicle_name, entry_data)
             )
 
         return self.async_create_entry(title=first_name, data=first_data)
@@ -377,14 +395,28 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         title = import_data.get("title", "Kia/Hyundai Vehicle")
         vehicle_id = import_data.get(CONF_VEHICLE_ID)
 
+        _LOGGER.info("Import step called for: %s (vehicle_id=%s)", title, vehicle_id)
+
         if not vehicle_id:
+            _LOGGER.error("Import called without vehicle_id")
             return self.async_abort(reason="unknown")
 
+        # Check if already configured
+        existing_ids = self._async_current_ids()
+        if vehicle_id in existing_ids:
+            _LOGGER.info("Vehicle %s already configured, aborting import", vehicle_id)
+            return self.async_abort(reason="already_configured")
+
         await self.async_set_unique_id(vehicle_id)
-        self._abort_if_unique_id_configured()
+        # Don't use _abort_if_unique_id_configured as it raises - use gentler check
+        if self._async_current_entries():
+            for entry in self._async_current_entries():
+                if entry.unique_id == vehicle_id:
+                    _LOGGER.info("Vehicle %s has matching entry, aborting import", vehicle_id)
+                    return self.async_abort(reason="already_configured")
 
         # Remove title from data before saving (it's not a config field)
         entry_data = {k: v for k, v in import_data.items() if k != "title"}
 
-        _LOGGER.info("Import creating entry: %s", title)
+        _LOGGER.info("Import creating entry for: %s (id=%s)", title, vehicle_id)
         return self.async_create_entry(title=title, data=entry_data)
