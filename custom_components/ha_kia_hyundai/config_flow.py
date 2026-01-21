@@ -33,6 +33,11 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# OTP delivery method constants
+CONF_OTP_METHOD = "otp_method"
+OTP_METHOD_EMAIL = "EMAIL"
+OTP_METHOD_PHONE = "PHONE"
+
 
 class KiaUvoOptionFlowHandler(OptionsFlow):
     """Handle options flow for Kia/Hyundai US."""
@@ -71,6 +76,12 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         self.data: dict[str, Any] = {}
         self.vehicle_manager: VehicleManager | None = None
         self.otp_task: asyncio.Task | None = None
+        # OTP flow state
+        self._otp_method: str | None = None
+        self._otp_email: str | None = None
+        self._otp_phone: str | None = None
+        self._otp_has_email: bool = False
+        self._otp_has_phone: bool = False
 
     @staticmethod
     @callback
@@ -110,22 +121,51 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 CONF_PIN: pin,
             }
 
-            # Create OTP handler that waits for user input
+            # Create OTP handler that interacts with the config flow
             async def otp_handler(context: dict[str, Any]) -> dict[str, Any]:
                 """Handle OTP requests from the EU library."""
-                _LOGGER.info(f"OTP handler called with context: {context}")
+                stage = context.get("stage", "")
+                _LOGGER.info(f"OTP handler called with stage: {stage}")
+                _LOGGER.debug(f"OTP context: {context}")
 
-                # Wait for OTP code to be entered
-                loop_counter = 0
-                while loop_counter < 120:  # 2 minute timeout
-                    if CONF_OTP_CODE in self.data:
-                        otp_code = self.data[CONF_OTP_CODE]
-                        _LOGGER.info("OTP code received: %s***", otp_code[:2] if len(otp_code) > 2 else "")
-                        return {"otp": otp_code}
-                    loop_counter += 1
-                    await asyncio.sleep(1)
+                if stage == "choose_destination":
+                    # Store available options for the UI
+                    self._otp_has_email = context.get("hasEmail", False)
+                    self._otp_has_phone = context.get("hasPhone", False)
+                    self._otp_email = context.get("email", "")
+                    self._otp_phone = context.get("phone", "")
 
-                raise ConfigEntryAuthFailed("Timeout waiting for OTP code")
+                    _LOGGER.info(
+                        f"OTP options - Email: {self._otp_email} ({self._otp_has_email}), "
+                        f"Phone: {self._otp_phone} ({self._otp_has_phone})"
+                    )
+
+                    # Wait for user to choose delivery method
+                    loop_counter = 0
+                    while loop_counter < 120:  # 2 minute timeout
+                        if self._otp_method is not None:
+                            method = self._otp_method
+                            _LOGGER.info(f"User selected OTP method: {method}")
+                            return {"notify_type": method}
+                        loop_counter += 1
+                        await asyncio.sleep(1)
+
+                    raise ConfigEntryAuthFailed("Timeout waiting for OTP method selection")
+
+                elif stage == "input_code":
+                    # Wait for OTP code to be entered
+                    loop_counter = 0
+                    while loop_counter < 120:  # 2 minute timeout
+                        if CONF_OTP_CODE in self.data:
+                            otp_code = self.data[CONF_OTP_CODE]
+                            _LOGGER.info(f"OTP code received: {otp_code[:2]}***")
+                            return {"otp_code": otp_code}
+                        loop_counter += 1
+                        await asyncio.sleep(1)
+
+                    raise ConfigEntryAuthFailed("Timeout waiting for OTP code")
+
+                return {}
 
             try:
                 _LOGGER.info("Creating VehicleManager for %s (%s)", brand_name, brand)
@@ -144,8 +184,11 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                     self._initialize_and_get_vehicles()
                 )
 
-                # Proceed to OTP code step
-                return await self.async_step_otp_code()
+                # Short delay to let the OTP handler receive the choose_destination call
+                await asyncio.sleep(2)
+
+                # Proceed to OTP method selection step
+                return await self.async_step_otp_method()
 
             except Exception as e:
                 _LOGGER.exception(f"Error during login setup: {e}")
@@ -171,6 +214,52 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         _LOGGER.info(
             "Found %d vehicles",
             len(self.vehicle_manager.vehicles) if self.vehicle_manager.vehicles else 0
+        )
+
+    async def async_step_otp_method(self, user_input: dict[str, Any] | None = None):
+        """Handle OTP delivery method selection."""
+        _LOGGER.debug(f"OTP method step with input: {user_input}")
+
+        errors: dict[str, str] = {}
+
+        # Build options based on what's available
+        otp_options = {}
+        description_parts = []
+
+        if self._otp_has_email and self._otp_email:
+            otp_options["EMAIL"] = f"Email ({self._otp_email})"
+            description_parts.append(f"Email: {self._otp_email}")
+        if self._otp_has_phone and self._otp_phone:
+            otp_options["PHONE"] = f"Phone/SMS ({self._otp_phone})"
+            description_parts.append(f"Phone: {self._otp_phone}")
+
+        # Fallback if detection didn't work yet
+        if not otp_options:
+            otp_options = {
+                "EMAIL": "Email",
+                "PHONE": "Phone/SMS",
+            }
+            description_parts = ["Select how to receive your OTP code"]
+
+        description = "Choose where to send the OTP code:\n" + "\n".join(description_parts)
+
+        data_schema = vol.Schema({
+            vol.Required(CONF_OTP_METHOD): vol.In(otp_options),
+        })
+
+        if user_input is not None:
+            # Store the selected method
+            self._otp_method = user_input[CONF_OTP_METHOD]
+            _LOGGER.info(f"User selected OTP delivery: {self._otp_method}")
+
+            # Proceed to OTP code entry
+            return await self.async_step_otp_code()
+
+        return self.async_show_form(
+            step_id="otp_method",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders={"description": description},
         )
 
     async def async_step_otp_code(self, user_input: dict[str, Any] | None = None):
@@ -221,12 +310,13 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 _LOGGER.exception(f"Error during OTP verification: {e}")
                 errors["base"] = "auth"
 
+        method_desc = "email" if self._otp_method == "EMAIL" else "phone"
         return self.async_show_form(
             step_id="otp_code",
             data_schema=data_schema,
             errors=errors,
             description_placeholders={
-                "message": "Enter the OTP code sent to your phone or email"
+                "method": method_desc,
             },
         )
 
