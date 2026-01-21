@@ -1,7 +1,7 @@
 """Vehicle Coordinator for Kia/Hyundai US integration.
 
 This coordinator manages data updates and API interactions using the
-EU library adapter.
+embedded fixed kia-hyundai-api library.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from homeassistant.helpers.update_coordinator import (
     REQUEST_REFRESH_DEFAULT_COOLDOWN,
 )
 
-from .api_adapter import EUApiAdapter
+from .kia_hyundai_api import UsKia
 from .const import (
     DOMAIN,
     DELAY_BETWEEN_ACTION_IN_PROGRESS_CHECKING,
@@ -52,24 +52,14 @@ class VehicleCoordinator(DataUpdateCoordinator):
         vehicle_id: str,
         vehicle_name: str,
         vehicle_model: str,
-        api_connection: EUApiAdapter,
+        api_connection: UsKia,
         scan_interval: timedelta,
     ) -> None:
-        """Initialize the coordinator.
-
-        Args:
-            hass: Home Assistant instance
-            config_entry: Config entry for this vehicle
-            vehicle_id: Unique identifier for the vehicle
-            vehicle_name: Display name of the vehicle
-            vehicle_model: Model name of the vehicle
-            api_connection: EUApiAdapter instance for API calls
-            scan_interval: How often to poll for updates
-        """
+        """Initialize the coordinator."""
         self.vehicle_id: str = vehicle_id
         self.vehicle_name: str = vehicle_name
         self.vehicle_model: str = vehicle_model
-        self.api_connection: EUApiAdapter = api_connection
+        self.api_connection: UsKia = api_connection
 
         request_refresh_debouncer = Debouncer(
             hass,
@@ -83,20 +73,17 @@ class VehicleCoordinator(DataUpdateCoordinator):
             # Wait for any pending actions to complete
             while self.last_action_name is not None:
                 try:
-                    await self.api_connection.check_last_action_finished(
+                    finished = await self.api_connection.check_last_action_finished(
                         vehicle_id=vehicle_id
                     )
+                    if finished:
+                        break
                 except ClientError as err:
                     _LOGGER.error("Error checking action status: %s", err)
+                    break
 
-                if self.last_action_name is not None:
-                    _LOGGER.debug(
-                        "Waiting for action %s to complete",
-                        self.api_connection.last_action
-                    )
-                    await sleep(DELAY_BETWEEN_ACTION_IN_PROGRESS_CHECKING)
-                else:
-                    _LOGGER.debug("Action finished: %s", self.api_connection.last_action)
+                _LOGGER.debug("Waiting for action to complete")
+                await sleep(DELAY_BETWEEN_ACTION_IN_PROGRESS_CHECKING)
 
             # Get cached vehicle status
             new_data = await self.api_connection.get_cached_vehicle_status(

@@ -6,8 +6,7 @@
   "documentation": "https://github.com/dahlb/ha_kia_hyundai",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/dahlb/ha_kia_hyundai/issues",
-  "loggers": ["ha_kia_hyundai", "hyundai_kia_connect_api"],
-  "requirements": ["hyundai-kia-connect-api==4.3.11"],
-  "version": "2.0.0"
+  "loggers": ["ha_kia_hyundai", "kia_hyundai_api"],
+  "requirements": ["pytz>=2021.3"],
+  "version": "2.1.0"
 }
-

@@ -1,11 +1,14 @@
-"""Config flow for Kia/Hyundai US integration using EU library.
+"""Config flow for Kia/Hyundai US integration using fixed library.
 
-This uses the same OTP flow as the official kia_uvo integration:
-1. login() returns OTPRequest if OTP needed
-2. send_otp(method) sends OTP to selected destination
-3. verify_otp_and_complete_login(code) completes authentication
+The OTP flow:
+1. User enters credentials and selects OTP delivery method (EMAIL/SMS)
+2. Login is initiated, OTP is sent to chosen destination
+3. User enters OTP code
+4. Login completes and vehicles are discovered
+5. All vehicles are automatically added
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -19,24 +22,21 @@ from homeassistant.const import (
     CONF_SCAN_INTERVAL,
 )
 from homeassistant.core import callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from hyundai_kia_connect_api import VehicleManager
-from hyundai_kia_connect_api.ApiImpl import OTPRequest
-from hyundai_kia_connect_api.const import OTP_NOTIFY_TYPE
-from hyundai_kia_connect_api.exceptions import AuthenticationError
+# Use embedded fixed library
+from .kia_hyundai_api import UsKia, AuthError
 
 from .const import (
-    CONF_BRAND,
-    CONF_PIN,
-    CONF_TOKEN,
+    CONF_DEVICE_ID,
+    CONF_OTP_CODE,
+    CONF_OTP_TYPE,
+    CONF_REFRESH_TOKEN,
     DOMAIN,
     CONFIG_FLOW_VERSION,
     CONF_VEHICLE_ID,
     DEFAULT_SCAN_INTERVAL,
     CONFIG_FLOW_TEMP_VEHICLES,
-    REGION_USA,
-    BRANDS,
-    BRAND_KIA,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -77,8 +77,8 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
     def __init__(self):
         """Initialize config flow."""
         self.data: dict[str, Any] = {}
-        self.vehicle_manager: VehicleManager | None = None
-        self._otp_request: OTPRequest | None = None
+        self.api_connection: UsKia | None = None
+        self.otp_task = None
 
     @staticmethod
     @callback
@@ -98,63 +98,70 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         data_schema = vol.Schema({
             vol.Required(CONF_USERNAME): str,
             vol.Required(CONF_PASSWORD): str,
-            vol.Required(CONF_BRAND, default="Kia"): vol.In(list(BRANDS.keys())),
-            vol.Optional(CONF_PIN, default=""): str,
+            vol.Required(CONF_OTP_TYPE, default="SMS"): vol.In(["EMAIL", "SMS"]),
         })
         errors: dict[str, str] = {}
 
         if user_input is not None:
             username = user_input[CONF_USERNAME]
             password = user_input[CONF_PASSWORD]
-            brand_name = user_input[CONF_BRAND]
-            brand = BRANDS.get(brand_name, BRAND_KIA)
-            pin = user_input.get(CONF_PIN, "")
+            otp_type = user_input[CONF_OTP_TYPE]
 
-            # Store user input
-            self.data = {
-                CONF_USERNAME: username,
-                CONF_PASSWORD: password,
-                CONF_BRAND: brand,
-                CONF_PIN: pin,
-            }
+            # OTP callback that handles the two-stage flow
+            async def otp_callback(context: dict[str, Any]):
+                stage = context.get("stage")
+                _LOGGER.info("OTP callback called with stage: %s", stage)
+                
+                if stage == "choose_destination":
+                    _LOGGER.info("OTP destination: %s (email available: %s, phone available: %s)",
+                                otp_type, context.get("hasEmail"), context.get("hasPhone"))
+                    return {"notify_type": otp_type}
+                
+                if stage == "input_code":
+                    _LOGGER.info("Waiting for OTP code input...")
+                    # Wait for user to enter OTP code (up to 2 minutes)
+                    for i in range(120):
+                        if CONF_OTP_CODE in self.data:
+                            otp_code = self.data[CONF_OTP_CODE]
+                            _LOGGER.info("OTP code received (length: %d)", len(otp_code))
+                            return {"otp_code": otp_code}
+                        await asyncio.sleep(1)
+                    
+                    raise ConfigEntryAuthFailed("2 minute timeout waiting for OTP code")
+                
+                raise ConfigEntryAuthFailed(f"Unknown OTP stage: {stage}")
 
             try:
-                _LOGGER.info("Creating VehicleManager for %s (%s)", brand_name, brand)
-                self.vehicle_manager = VehicleManager(
-                    region=REGION_USA,
-                    brand=brand,
+                client_session = async_get_clientsession(self.hass)
+                
+                _LOGGER.info("Creating UsKia connection for %s", username)
+                self.api_connection = UsKia(
                     username=username,
                     password=password,
-                    pin=pin,
-                    # NO otp_handler - we use explicit methods instead
+                    otp_callback=otp_callback,
+                    client_session=client_session,
                 )
+                _LOGGER.info("UsKia created with device_id: %s", self.api_connection.device_id)
 
-                # Attempt login - returns Token or OTPRequest
-                _LOGGER.info("Attempting login...")
-                result = await self.hass.async_add_executor_job(
-                    self.vehicle_manager.login
-                )
+                # Store user input
+                self.data = {
+                    CONF_USERNAME: username,
+                    CONF_PASSWORD: password,
+                    CONF_OTP_TYPE: otp_type,
+                }
 
-                if isinstance(result, OTPRequest):
-                    # OTP is required
-                    _LOGGER.info("OTP required. Email: %s, SMS: %s",
-                                 result.has_email, result.has_sms)
-                    self._otp_request = result
-                    return await self.async_step_select_otp_method()
-                else:
-                    # Login succeeded without OTP (cached token)
-                    _LOGGER.info("Login succeeded without OTP")
-                    # Save the token for later use
-                    if self.vehicle_manager.token:
-                        self.data[CONF_TOKEN] = self.vehicle_manager.token.to_dict()
-                        _LOGGER.info("Token saved for future authentication")
-                    return await self._finalize_setup()
+                # Start login task (runs in background while waiting for OTP)
+                _LOGGER.info("Starting login task...")
+                self.otp_task = self.hass.loop.create_task(self.api_connection.login())
+                
+                # Move to OTP code entry step
+                return await self.async_step_otp_code()
 
-            except AuthenticationError as e:
+            except AuthError as e:
                 _LOGGER.error("Authentication error: %s", e)
                 errors["base"] = "auth"
             except Exception as e:
-                _LOGGER.exception("Error during login: %s", e)
+                _LOGGER.exception("Error during login setup: %s", e)
                 errors["base"] = "auth"
 
         return self.async_show_form(
@@ -163,143 +170,82 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             errors=errors,
         )
 
-    async def async_step_select_otp_method(self, user_input: dict[str, Any] | None = None):
-        """Let user choose email or SMS for OTP delivery."""
-        _LOGGER.debug("OTP method step with input: %s", user_input)
-
-        errors: dict[str, str] = {}
-
-        # Build available methods
-        otp_methods = {}
-        if self._otp_request and self._otp_request.has_email:
-            otp_methods["EMAIL"] = "Email"
-        if self._otp_request and self._otp_request.has_sms:
-            otp_methods["SMS"] = "Phone/SMS"
-
-        # Fallback if detection failed
-        if not otp_methods:
-            otp_methods = {"EMAIL": "Email", "SMS": "Phone/SMS"}
+    async def async_step_otp_code(self, user_input: dict[str, Any] | None = None):
+        """Handle OTP code input step."""
+        _LOGGER.debug("OTP code step with input: %s", user_input)
 
         data_schema = vol.Schema({
-            vol.Required("method"): vol.In(otp_methods),
-        })
-
-        if user_input is not None:
-            method = user_input["method"]
-            _LOGGER.info("User selected OTP method: %s", method)
-
-            try:
-                # Use the proper enum from the library
-                if method == "EMAIL":
-                    otp_type = OTP_NOTIFY_TYPE.EMAIL
-                else:
-                    otp_type = OTP_NOTIFY_TYPE.SMS
-
-                # Send OTP using explicit method (same as official kia_uvo)
-                _LOGGER.info("Sending OTP via %s (type=%s)...", method, otp_type)
-                await self.hass.async_add_executor_job(
-                    self.vehicle_manager.send_otp,
-                    otp_type
-                )
-                _LOGGER.info("OTP sent successfully")
-
-                return await self.async_step_enter_otp()
-
-            except Exception as e:
-                _LOGGER.exception("Error sending OTP: %s", e)
-                errors["base"] = "auth"
-
-        return self.async_show_form(
-            step_id="select_otp_method",
-            data_schema=data_schema,
-            errors=errors,
-        )
-
-    async def async_step_enter_otp(self, user_input: dict[str, Any] | None = None):
-        """Prompt user to enter the OTP code."""
-        _LOGGER.debug("Enter OTP step with input: %s", user_input)
-
-        data_schema = vol.Schema({
-            vol.Required("otp"): str,
+            vol.Required(CONF_OTP_CODE): str,
         })
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            otp_code = user_input["otp"].strip()
-            _LOGGER.info("Verifying OTP code (length: %d)...", len(otp_code))
+            # Store the OTP code so the callback can read it
+            self.data[CONF_OTP_CODE] = user_input[CONF_OTP_CODE].strip()
+            _LOGGER.info("OTP code stored, waiting for login to complete...")
 
             try:
-                # Verify OTP and complete login using explicit method
-                await self.hass.async_add_executor_job(
-                    self.vehicle_manager.verify_otp_and_complete_login,
-                    otp_code
-                )
-                _LOGGER.info("OTP verified successfully!")
+                # Wait for login task to complete
+                await self.otp_task
+                _LOGGER.info("Login completed successfully!")
 
-                # Save the token for later use (avoids OTP on restart)
-                if self.vehicle_manager.token:
-                    self.data[CONF_TOKEN] = self.vehicle_manager.token.to_dict()
-                    _LOGGER.info("Token saved for future authentication")
+                if self.api_connection is None:
+                    raise ConfigEntryAuthFailed("API connection not established")
 
-                return await self._finalize_setup()
+                # Get vehicles
+                _LOGGER.info("Getting vehicles...")
+                await self.api_connection.get_vehicles()
+                
+                if not self.api_connection.vehicles:
+                    _LOGGER.error("No vehicles found")
+                    return self.async_abort(reason="no_vehicles")
 
-            except AuthenticationError as e:
-                _LOGGER.error("OTP verification failed: %s", e)
+                # Store vehicles for next step
+                self.data[CONFIG_FLOW_TEMP_VEHICLES] = self.api_connection.vehicles
+                
+                # Store tokens
+                self.data[CONF_DEVICE_ID] = self.api_connection.device_id
+                self.data[CONF_REFRESH_TOKEN] = self.api_connection.refresh_token
+
+                _LOGGER.info("Found %d vehicles", len(self.api_connection.vehicles))
+                for v in self.api_connection.vehicles:
+                    _LOGGER.info("  - %s (%s): %s", 
+                                v.get("nickName"), v.get("modelName"), v.get("vehicleIdentifier"))
+
+                return await self.async_step_pick_vehicle()
+
+            except AuthError as e:
+                _LOGGER.error("Authentication failed: %s", e)
                 errors["base"] = "invalid_otp"
+            except ConfigEntryAuthFailed as e:
+                _LOGGER.error("Config entry auth failed: %s", e)
+                errors["base"] = "auth"
             except Exception as e:
-                _LOGGER.exception("Error verifying OTP: %s", e)
+                _LOGGER.exception("Error completing login: %s", e)
                 errors["base"] = "auth"
 
         return self.async_show_form(
-            step_id="enter_otp",
+            step_id="otp_code",
             data_schema=data_schema,
             errors=errors,
+            description_placeholders={
+                "otp_type": self.data.get(CONF_OTP_TYPE, "EMAIL/SMS"),
+            },
         )
-
-    async def _finalize_setup(self):
-        """Finalize setup after successful login."""
-        _LOGGER.info("Finalizing setup...")
-
-        try:
-            # Initialize vehicles
-            await self.hass.async_add_executor_job(
-                self.vehicle_manager.initialize_vehicles
-            )
-
-            if not self.vehicle_manager.vehicles:
-                _LOGGER.error("No vehicles found after login")
-                return self.async_abort(reason="no_vehicles")
-
-            # Build vehicles list
-            vehicles = []
-            for vid, vehicle in self.vehicle_manager.vehicles.items():
-                _LOGGER.info(
-                    "Discovered vehicle: id=%s, name=%s, model=%s",
-                    vid, vehicle.name, vehicle.model
-                )
-                vehicles.append({
-                    "vehicleIdentifier": vid,
-                    "nickName": vehicle.name,
-                    "modelName": vehicle.model,
-                })
-
-            self.data[CONFIG_FLOW_TEMP_VEHICLES] = vehicles
-            return await self.async_step_pick_vehicle()
-
-        except Exception as e:
-            _LOGGER.exception("Error initializing vehicles: %s", e)
-            return self.async_abort(reason="unknown")
 
     async def async_step_pick_vehicle(self, user_input: dict[str, Any] | None = None):
         """Add ALL vehicles at once - no picking needed."""
         _LOGGER.debug("Adding all vehicles automatically")
 
-        if self.vehicle_manager is None:
-            raise ConfigEntryAuthFailed("VehicleManager not established")
+        if self.api_connection is None:
+            raise ConfigEntryAuthFailed("API connection not established")
 
         vehicles = self.data.get(CONFIG_FLOW_TEMP_VEHICLES, [])
-        if CONFIG_FLOW_TEMP_VEHICLES in self.data:
-            del self.data[CONFIG_FLOW_TEMP_VEHICLES]
+        
+        # Clean up temporary data
+        self.data.pop(CONFIG_FLOW_TEMP_VEHICLES, None)
+        self.data.pop(CONF_OTP_CODE, None)
+        self.data.pop(CONF_OTP_TYPE, None)
 
         _LOGGER.info("Processing %d vehicles for setup", len(vehicles))
 
@@ -312,9 +258,8 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 CONF_USERNAME: self.data[CONF_USERNAME],
                 CONF_PASSWORD: self.data[CONF_PASSWORD],
                 CONF_VEHICLE_ID: vehicle_id,
-                CONF_BRAND: self.data[CONF_BRAND],
-                CONF_PIN: self.data.get(CONF_PIN, ""),
-                CONF_TOKEN: self.data.get(CONF_TOKEN),  # Include saved token
+                CONF_DEVICE_ID: self.data.get(CONF_DEVICE_ID),
+                CONF_REFRESH_TOKEN: self.data.get(CONF_REFRESH_TOKEN),
             }
 
             await self.async_set_unique_id(vehicle_id)
@@ -326,7 +271,6 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             )
 
         # For new setup: add ALL vehicles
-        # First, check which vehicles are already configured
         created_entries = []
         for vehicle in vehicles:
             vehicle_id = vehicle["vehicleIdentifier"]
@@ -334,20 +278,19 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
 
             _LOGGER.info("Checking vehicle: %s (%s)", vehicle_name, vehicle_id)
 
-            # Check if this vehicle is already configured using _async_current_ids
+            # Check if already configured
             existing_ids = self._async_current_ids()
             if vehicle_id in existing_ids:
-                _LOGGER.info("Vehicle %s already configured (id in current_ids), skipping", vehicle_name)
+                _LOGGER.info("Vehicle %s already configured, skipping", vehicle_name)
                 continue
 
-            # Create entry data for this vehicle
+            # Create entry data
             entry_data = {
                 CONF_USERNAME: self.data[CONF_USERNAME],
                 CONF_PASSWORD: self.data[CONF_PASSWORD],
                 CONF_VEHICLE_ID: vehicle_id,
-                CONF_BRAND: self.data[CONF_BRAND],
-                CONF_PIN: self.data.get(CONF_PIN, ""),
-                CONF_TOKEN: self.data.get(CONF_TOKEN),  # Include saved token
+                CONF_DEVICE_ID: self.data.get(CONF_DEVICE_ID),
+                CONF_REFRESH_TOKEN: self.data.get(CONF_REFRESH_TOKEN),
             }
 
             created_entries.append((vehicle_id, vehicle_name, entry_data))
@@ -356,36 +299,22 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             _LOGGER.info("All vehicles already configured")
             return self.async_abort(reason="already_configured")
 
-        _LOGGER.info("Creating entries for %d new vehicles: %s",
-                    len(created_entries),
-                    [name for _, name, _ in created_entries])
+        _LOGGER.info("Creating entries for %d new vehicles", len(created_entries))
 
-        # Create first entry via flow return (required by HA)
+        # Create first entry via flow return
         first_id, first_name, first_data = created_entries[0]
-
-        # Set unique_id for first entry
         await self.async_set_unique_id(first_id)
         self._abort_if_unique_id_configured()
 
-        # Schedule additional entries via import flows with a small delay
-        # to avoid race conditions
-        async def schedule_import(vehicle_id: str, vehicle_name: str, entry_data: dict):
-            """Schedule an import flow for a vehicle."""
-            try:
-                _LOGGER.info("Starting import flow for vehicle: %s (%s)", vehicle_name, vehicle_id)
-                result = await self.hass.config_entries.flow.async_init(
+        # Schedule additional entries via import flows
+        for vehicle_id, vehicle_name, entry_data in created_entries[1:]:
+            _LOGGER.info("Scheduling import for: %s", vehicle_name)
+            self.hass.async_create_task(
+                self.hass.config_entries.flow.async_init(
                     DOMAIN,
                     context={"source": "import"},
                     data={"title": vehicle_name, **entry_data},
                 )
-                _LOGGER.info("Import flow result for %s: %s", vehicle_name, result)
-            except Exception as e:
-                _LOGGER.error("Failed to import vehicle %s: %s", vehicle_name, e)
-
-        for vehicle_id, vehicle_name, entry_data in created_entries[1:]:
-            _LOGGER.info("Scheduling import for vehicle: %s", vehicle_name)
-            self.hass.async_create_task(
-                schedule_import(vehicle_id, vehicle_name, entry_data)
             )
 
         return self.async_create_entry(title=first_name, data=first_data)
@@ -395,7 +324,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         title = import_data.get("title", "Kia/Hyundai Vehicle")
         vehicle_id = import_data.get(CONF_VEHICLE_ID)
 
-        _LOGGER.info("Import step called for: %s (vehicle_id=%s)", title, vehicle_id)
+        _LOGGER.info("Import step for: %s (%s)", title, vehicle_id)
 
         if not vehicle_id:
             _LOGGER.error("Import called without vehicle_id")
@@ -404,19 +333,13 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         # Check if already configured
         existing_ids = self._async_current_ids()
         if vehicle_id in existing_ids:
-            _LOGGER.info("Vehicle %s already configured, aborting import", vehicle_id)
+            _LOGGER.info("Vehicle %s already configured", vehicle_id)
             return self.async_abort(reason="already_configured")
 
         await self.async_set_unique_id(vehicle_id)
-        # Don't use _abort_if_unique_id_configured as it raises - use gentler check
-        if self._async_current_entries():
-            for entry in self._async_current_entries():
-                if entry.unique_id == vehicle_id:
-                    _LOGGER.info("Vehicle %s has matching entry, aborting import", vehicle_id)
-                    return self.async_abort(reason="already_configured")
 
-        # Remove title from data before saving (it's not a config field)
+        # Remove title from data
         entry_data = {k: v for k, v in import_data.items() if k != "title"}
 
-        _LOGGER.info("Import creating entry for: %s (id=%s)", title, vehicle_id)
+        _LOGGER.info("Creating entry for: %s", title)
         return self.async_create_entry(title=title, data=entry_data)

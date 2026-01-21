@@ -1,8 +1,9 @@
-"""Kia/Hyundai US Integration using EU library for auth/API.
+"""Kia/Hyundai US integration using fixed kia-hyundai-api.
 
-This integration uses the hyundai-kia-connect-api (EU library) for
-authentication and API calls while maintaining the US integration's
-sensor definitions and entity structure.
+This integration uses an embedded, fixed version of kia-hyundai-api with:
+- Updated API headers matching the current Kia iOS app
+- Fixed OTP flow with proper _complete_login_with_otp step
+- Added tncFlag to login payload
 """
 
 import logging
@@ -16,18 +17,19 @@ from homeassistant.const import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api_adapter import EUApiAdapter, create_vehicle_manager
+# Use embedded fixed library
+from .kia_hyundai_api import UsKia, AuthError
+
 from .const import (
-    CONF_BRAND,
-    CONF_PIN,
-    CONF_TOKEN,
+    CONF_DEVICE_ID,
+    CONF_REFRESH_TOKEN,
     DOMAIN,
     PLATFORMS,
     CONF_VEHICLE_ID,
     DEFAULT_SCAN_INTERVAL,
     CONFIG_FLOW_VERSION,
-    BRAND_KIA,
 )
 from .services import async_setup_services, async_unload_services
 from .vehicle_coordinator import VehicleCoordinator
@@ -38,178 +40,151 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Migrate old entry."""
-    _LOGGER.debug(
-        "Migrating configuration from version %s.%s",
-        config_entry.version,
-        config_entry.minor_version
-    )
+    _LOGGER.debug("Migrating configuration from version %s.%s", config_entry.version, config_entry.minor_version)
 
     if config_entry.version > CONFIG_FLOW_VERSION:
-        # This means the user has downgraded from a future version
         return False
 
-    if config_entry.version == 2:
-        _LOGGER.debug(f"Migrating from v2: {config_entry.data}")
-        new_data = {
-            CONF_USERNAME: config_entry.data[CONF_USERNAME],
-            CONF_PASSWORD: config_entry.data[CONF_PASSWORD],
-            CONF_VEHICLE_ID: config_entry.data["vehicle_identifier"],
-            CONF_BRAND: config_entry.data.get(CONF_BRAND, BRAND_KIA),
-            CONF_PIN: config_entry.data.get(CONF_PIN, ""),
-        }
+    if config_entry.version < 3:
+        # Migration from old versions to v3
+        new_data = {**config_entry.data}
+        # Remove old OTP fields if present
+        for key in ["otp_type", "otp_code", "access_token"]:
+            new_data.pop(key, None)
+        
         hass.config_entries.async_update_entry(
-            config_entry,
-            data=new_data,
-            minor_version=1,
-            version=CONFIG_FLOW_VERSION
+            config_entry, data=new_data, version=3
         )
+        _LOGGER.info("Migration to version 3 successful")
 
-    if config_entry.version == 3:
-        _LOGGER.debug(f"Migrating from v3 to v4: {config_entry.data}")
-        # Add brand and pin fields for EU library
-        new_data = dict(config_entry.data)
-        if CONF_BRAND not in new_data:
-            new_data[CONF_BRAND] = BRAND_KIA
-        if CONF_PIN not in new_data:
-            new_data[CONF_PIN] = ""
+    if config_entry.version < 5:
+        # Migration to v5 - ensure required fields exist
+        new_data = {**config_entry.data}
         hass.config_entries.async_update_entry(
-            config_entry,
-            data=new_data,
-            minor_version=1,
-            version=CONFIG_FLOW_VERSION
+            config_entry, data=new_data, version=5
         )
-
-    _LOGGER.debug(
-        "Migration to configuration version %s.%s successful",
-        config_entry.version,
-        config_entry.minor_version
-    )
+        _LOGGER.info("Migration to version 5 successful")
 
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Set up Kia/Hyundai US from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
-    async_setup_services(hass)
-
-    vehicle_id = config_entry.data[CONF_VEHICLE_ID]
     username = config_entry.data[CONF_USERNAME]
     password = config_entry.data[CONF_PASSWORD]
-    brand = config_entry.data.get(CONF_BRAND, BRAND_KIA)
-    pin = config_entry.data.get(CONF_PIN, "")
-    token_dict = config_entry.data.get(CONF_TOKEN)  # Saved token from config flow
+    vehicle_id = config_entry.data[CONF_VEHICLE_ID]
+    device_id = config_entry.data.get(CONF_DEVICE_ID)
+    refresh_token = config_entry.data.get(CONF_REFRESH_TOKEN)
 
     scan_interval = timedelta(
-        minutes=config_entry.options.get(
-            CONF_SCAN_INTERVAL,
-            DEFAULT_SCAN_INTERVAL,
-        )
+        minutes=config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
 
-    _LOGGER.info(
-        "Setting up Kia/Hyundai US integration for vehicle %s",
-        vehicle_id
-    )
+    _LOGGER.info("Setting up Kia/Hyundai US integration for vehicle %s", vehicle_id)
 
     try:
-        # Create VehicleManager using EU library with saved token
-        # The token from config flow allows us to skip OTP
-        vehicle_manager = create_vehicle_manager(
+        client_session = async_get_clientsession(hass)
+        
+        # Dummy OTP callback - should not be called during normal operation
+        # since we have a valid refresh_token from config_flow
+        async def otp_callback(context):
+            _LOGGER.error("OTP callback called unexpectedly during entry setup")
+            raise ConfigEntryAuthFailed("OTP required - please reconfigure the integration")
+
+        # Create API connection with stored credentials
+        api_connection = UsKia(
             username=username,
             password=password,
-            brand=brand,
-            pin=pin,
-            token_dict=token_dict,  # Restore saved token
+            otp_callback=otp_callback,
+            device_id=device_id,
+            refresh_token=refresh_token,
+            client_session=client_session,
         )
 
-        # Initialize and get vehicles (run blocking calls in executor)
-        # With a valid token, this should succeed without OTP
-        _LOGGER.debug("Initializing VehicleManager via check_and_refresh_token")
-        await hass.async_add_executor_job(
-            vehicle_manager.check_and_refresh_token
-        )
+        _LOGGER.debug("Logging in to Kia API...")
+        await api_connection.login()
+        _LOGGER.debug("Login successful, session_id: %s", api_connection.session_id is not None)
+
+        # Get vehicles to find the one we want
+        await api_connection.get_vehicles()
+        
+        if api_connection.vehicles is None:
+            raise ConfigEntryError("No vehicles found in account")
 
         # Find our vehicle
-        _LOGGER.debug("Looking for vehicle %s in manager.vehicles", vehicle_id)
         vehicle = None
-        vehicle_name = None
-        vehicle_model = None
-
-        for vid, v in vehicle_manager.vehicles.items():
-            _LOGGER.debug("Found vehicle: id=%s, name=%s, model=%s", vid, v.name, v.model)
-            if vid == vehicle_id:
+        vehicle_name = "Unknown"
+        vehicle_model = "Unknown"
+        for v in api_connection.vehicles:
+            if v["vehicleIdentifier"] == vehicle_id:
                 vehicle = v
-                vehicle_name = v.name
-                vehicle_model = v.model
+                vehicle_name = v.get("nickName", "Unknown")
+                vehicle_model = v.get("modelName", "Unknown")
                 break
 
         if vehicle is None:
-            _LOGGER.error(
-                "Vehicle %s not found. Available vehicles: %s",
-                vehicle_id,
-                list(vehicle_manager.vehicles.keys())
-            )
             raise ConfigEntryError(f"Vehicle {vehicle_id} not found in account")
 
-        # Create the API adapter
-        api_adapter = EUApiAdapter(
-            hass=hass,
-            vehicle_manager=vehicle_manager,
-            vehicle_id=vehicle_id,
-        )
+        _LOGGER.info("Found vehicle: %s (%s)", vehicle_name, vehicle_model)
 
-        # Create coordinator
+        # Update stored tokens if they changed
+        new_data = {**config_entry.data}
+        if api_connection.device_id != device_id:
+            new_data[CONF_DEVICE_ID] = api_connection.device_id
+        if api_connection.refresh_token != refresh_token:
+            new_data[CONF_REFRESH_TOKEN] = api_connection.refresh_token
+        
+        if new_data != config_entry.data:
+            hass.config_entries.async_update_entry(config_entry, data=new_data)
+
+        # Create the coordinator
         coordinator = VehicleCoordinator(
             hass=hass,
             config_entry=config_entry,
             vehicle_id=vehicle_id,
-            vehicle_name=vehicle_name or vehicle_id,
-            vehicle_model=vehicle_model or "Unknown",
-            api_connection=api_adapter,
+            vehicle_name=vehicle_name,
+            vehicle_model=vehicle_model,
+            api_connection=api_connection,
             scan_interval=scan_interval,
         )
 
-        _LOGGER.debug("Starting first refresh for %s", vehicle_name)
+        # Do first refresh
+        _LOGGER.debug("Starting first data refresh for %s", vehicle_name)
         await coordinator.async_config_entry_first_refresh()
         _LOGGER.debug("First refresh completed for %s", vehicle_name)
 
+        # Store coordinator
+        hass.data.setdefault(DOMAIN, {})
         hass.data[DOMAIN][vehicle_id] = coordinator
 
+        # Set up platforms
         await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
 
-        if not config_entry.update_listeners:
-            config_entry.add_update_listener(async_update_options)
+        # Set up services
+        await async_setup_services(hass)
 
         return True
 
-    except ConfigEntryAuthFailed:
-        raise
-    except ConfigEntryError:
-        raise
+    except AuthError as err:
+        _LOGGER.error("Authentication failed: %s", err)
+        raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
     except Exception as err:
-        _LOGGER.exception("Error setting up Kia/Hyundai US integration: %s", err)
-        raise ConfigEntryError(f"Failed to set up integration: {err}") from err
+        _LOGGER.exception("Error setting up integration: %s", err)
+        raise ConfigEntryError(f"Error setting up integration: {err}") from err
 
 
-async def async_update_options(hass: HomeAssistant, config_entry: ConfigEntry):
-    """Handle options update."""
-    await hass.config_entries.async_reload(config_entry.entry_id)
-
-
-async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
+async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(
-        config_entry, PLATFORMS
-    ):
-        vehicle_id = config_entry.unique_id
-        coordinator = hass.data[DOMAIN].get(vehicle_id)
-        if coordinator:
-            # Close the API adapter (cleanup if needed)
-            await coordinator.api_connection.close()
-            del hass.data[DOMAIN][vehicle_id]
-
-    if not hass.data[DOMAIN]:
-        async_unload_services(hass)
+    vehicle_id = config_entry.data[CONF_VEHICLE_ID]
+    
+    unload_ok = await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
+    
+    if unload_ok:
+        hass.data[DOMAIN].pop(vehicle_id, None)
+        
+        # Unload services if no more entries
+        if not hass.data[DOMAIN]:
+            await async_unload_services(hass)
+            hass.data.pop(DOMAIN, None)
 
     return unload_ok
