@@ -12,6 +12,7 @@ CONF_REFRESH_TOKEN: str = "refresh_token"
 CONF_ACCESS_TOKEN: str = "access_token"
 CONF_BRAND: str = "brand"
 CONF_PIN: str = "pin"
+CONF_TOKEN: str = "token"  # Serialized token dict for v4 API
 
 CONFIG_FLOW_TEMP_VEHICLES: str = "vehicles"
 

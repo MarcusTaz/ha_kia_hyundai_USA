@@ -21,6 +21,7 @@ from .api_adapter import EUApiAdapter, create_vehicle_manager
 from .const import (
     CONF_BRAND,
     CONF_PIN,
+    CONF_TOKEN,
     DOMAIN,
     PLATFORMS,
     CONF_VEHICLE_ID,
@@ -97,6 +98,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     password = config_entry.data[CONF_PASSWORD]
     brand = config_entry.data.get(CONF_BRAND, BRAND_KIA)
     pin = config_entry.data.get(CONF_PIN, "")
+    token_dict = config_entry.data.get(CONF_TOKEN)  # Saved token from config flow
 
     scan_interval = timedelta(
         minutes=config_entry.options.get(
@@ -111,18 +113,18 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     )
 
     try:
-        # Create VehicleManager using EU library (synchronous creation)
-        # No OTP handler during setup - auth should already be complete
+        # Create VehicleManager using EU library with saved token
+        # The token from config flow allows us to skip OTP
         vehicle_manager = create_vehicle_manager(
             username=username,
             password=password,
             brand=brand,
             pin=pin,
+            token_dict=token_dict,  # Restore saved token
         )
 
         # Initialize and get vehicles (run blocking calls in executor)
-        # Note: check_and_refresh_token() calls initialize() when token is None,
-        # which handles login. We should NOT call initialize() separately.
+        # With a valid token, this should succeed without OTP
         _LOGGER.debug("Initializing VehicleManager via check_and_refresh_token")
         await hass.async_add_executor_job(
             vehicle_manager.check_and_refresh_token
