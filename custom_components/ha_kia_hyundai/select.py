@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import VehicleCoordinator
-from .const import CONF_VEHICLE_ID, DOMAIN, SEAT_STATUS, STR_TO_ENUM
+from .const import CONF_VEHICLE_ID, DOMAIN, SEAT_STATUS, STR_TO_SEAT_SETTING
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 OFF = ["Off"]
@@ -119,7 +119,7 @@ class SeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
         setattr(
             self.coordinator,
             self.entity_description.key,
-            STR_TO_ENUM[option],
+            STR_TO_SEAT_SETTING[option],
         )
         self._attr_current_option = option
         self.async_write_ha_state()
@@ -141,5 +141,5 @@ class SeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
         setattr(
             self.coordinator,
             self.entity_description.key,
-            STR_TO_ENUM[self._attr_current_option or "Off"],
+            STR_TO_SEAT_SETTING[self._attr_current_option or "Off"],
         )
