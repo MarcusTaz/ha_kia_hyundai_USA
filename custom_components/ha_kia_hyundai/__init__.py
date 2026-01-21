@@ -121,12 +121,11 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         )
 
         # Initialize and get vehicles (run blocking calls in executor)
-        _LOGGER.debug("Initializing VehicleManager")
+        # Note: check_and_refresh_token() calls initialize() when token is None,
+        # which handles login. We should NOT call initialize() separately.
+        _LOGGER.debug("Initializing VehicleManager via check_and_refresh_token")
         await hass.async_add_executor_job(
             vehicle_manager.check_and_refresh_token
-        )
-        await hass.async_add_executor_job(
-            vehicle_manager.initialize
         )
 
         # Find our vehicle

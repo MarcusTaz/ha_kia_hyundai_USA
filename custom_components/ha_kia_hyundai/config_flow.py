@@ -171,10 +171,17 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 elif stage == "input_code":
                     # Wait for OTP code to be entered (with timeout)
                     _LOGGER.info("Waiting for user to enter OTP code...")
+                    _LOGGER.info(f"OTP context for input_code: {context}")
                     if self._otp_code_event.wait(timeout=120):
                         code = self._otp_code
-                        _LOGGER.info(f"OTP code received: {code[:2] if code else ''}***")
-                        return {"otp_code": code}
+                        # Clean the code - remove any whitespace
+                        if code:
+                            code = code.strip()
+                        _LOGGER.info(f"OTP code received: '{code[:2] if code else ''}***' (length: {len(code) if code else 0})")
+                        _LOGGER.info("Returning otp_code to library")
+                        result = {"otp_code": code}
+                        _LOGGER.info(f"Returning: {{'otp_code': '{code[:2] if code else ''}***'}}")
+                        return result
                     else:
                         _LOGGER.error("Timeout waiting for OTP code")
                         return {}
@@ -226,12 +233,13 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
 
     def _do_login(self):
         """Perform the actual login (blocking, runs in executor)."""
-        _LOGGER.info("Checking/refreshing token...")
+        # Note: check_and_refresh_token() calls initialize() when token is None,
+        # which calls login(). We should NOT call initialize() separately as
+        # that would trigger a second login attempt!
+        _LOGGER.info("Starting login via check_and_refresh_token...")
         self.vehicle_manager.check_and_refresh_token()
-        _LOGGER.info("Initializing vehicles...")
-        self.vehicle_manager.initialize()
         _LOGGER.info(
-            "Found %d vehicles",
+            "Login complete. Found %d vehicles",
             len(self.vehicle_manager.vehicles) if self.vehicle_manager.vehicles else 0
         )
 
