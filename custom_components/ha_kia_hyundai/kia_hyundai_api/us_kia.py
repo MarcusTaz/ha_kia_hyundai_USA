@@ -472,7 +472,7 @@ class UsKia:
                 "vehicleStatus": "1",
                 "weather": "0",
             },
-            "vinKey": vehicle_key,  # Pass as string, not list
+            "vinKey": [vehicle_key],  # Must be a list
         }
         response = await self._post_request_with_logging_and_errors_raised(
             vehicle_key=vehicle_key,
