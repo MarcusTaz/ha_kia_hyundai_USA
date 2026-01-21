@@ -2,121 +2,38 @@
   "config": {
     "step": {
       "user": {
-        "title": "Kia/Hyundai US Auth",
-        "description": "Configure your Kia/Hyundai Connect credentials.",
+        "title": "Kia/Hyundai US Setup",
+        "description": "Enter your Kia Connect credentials and select how you want to receive the OTP code.",
         "data": {
-          "username": "Email/Username",
+          "username": "Email",
           "password": "Password",
-          "brand": "Vehicle Brand",
-          "pin": "PIN (optional, required for some operations)"
+          "otp_type": "OTP Delivery Method"
         }
       },
-      "select_otp_method": {
-        "title": "Select OTP Delivery",
-        "description": "Choose where to send the One Time Password.",
-        "data": {
-          "method": "Send OTP to"
-        }
-      },
-      "enter_otp": {
+      "otp_code": {
         "title": "Enter OTP Code",
-        "description": "Enter the One Time Password you received.",
+        "description": "An OTP code has been sent to your {otp_type}. Enter it below.",
         "data": {
-          "otp": "OTP Code"
+          "otp_code": "OTP Code"
         }
-      },
-      "pick_vehicle": {
-        "title": "Kia/Hyundai US Vehicle",
-        "description": "All vehicles will be added automatically.",
-        "data": {
-          "vehicle_id": "Vehicle"
-        }
-      },
-      "reauth_confirm": {
-        "title": "[%key:common::config_flow::title::reauth%]",
-        "description": "The Kia/Hyundai US integration needs to re-authenticate your account."
       }
     },
-    "abort": {
-      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]",
-      "already_configured": "All vehicles are already configured.",
-      "unknown": "Unknown error occurred.",
-      "no_vehicles": "No vehicles found in your account."
-    },
     "error": {
-      "auth": "Login failed. Please verify your credentials and try again.",
+      "auth": "Authentication failed. Check your credentials.",
       "invalid_otp": "Invalid OTP code. Please try again.",
-      "timeout": "Authentication timed out. Please try again."
+      "unknown": "Unknown error occurred."
+    },
+    "abort": {
+      "already_configured": "This vehicle is already configured.",
+      "no_vehicles": "No vehicles found in your account.",
+      "unknown": "Unknown error."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Kia/Hyundai US: Configuration",
         "data": {
-          "scan_interval": "Scan Interval in Minutes"
-        }
-      }
-    }
-  },
-  "services": {
-    "start_climate": {
-      "name": "Start Climate",
-      "description": "Start climate control. Not all options may be available for your vehicle.",
-      "fields": {
-        "device_id": {
-          "name": "Vehicle Device",
-          "description": ""
-        },
-        "temperature": {
-          "name": "Temperature",
-          "description": "The temperature to set."
-        },
-        "defrost": {
-          "name": "Defrost",
-          "description": "Turn on defrost."
-        },
-        "climate": {
-          "name": "Climate",
-          "description": "Turn on climate."
-        },
-        "heating": {
-          "name": "Heating Accessories",
-          "description": "Turn on heating accessories."
-        },
-        "driver_seat": {
-          "name": "Driver's Seat",
-          "description": "Driver's seat controls."
-        },
-        "passenger_seat": {
-          "name": "Passenger's Seat",
-          "description": "Passenger's seat controls."
-        },
-        "left_rear_seat": {
-          "name": "Left Rear Seat",
-          "description": "Left Rear seat controls."
-        },
-        "right_rear_seat": {
-          "name": "Right Rear Seat",
-          "description": "Right Rear seat controls."
-        }
-      }
-    },
-    "set_charge_limits": {
-      "name": "Set Charge Limits",
-      "description": "Maximum allowed charge for DC and AC charging.",
-      "fields": {
-        "device_id": {
-          "name": "Vehicle Device",
-          "description": ""
-        },
-        "ac_limit": {
-          "name": "AC Limit",
-          "description": "Percent of battery allowed to fill."
-        },
-        "dc_limit": {
-          "name": "DC Limit",
-          "description": "Percent of battery allowed to fill."
+          "scan_interval": "Scan Interval (minutes)"
         }
       }
     }
