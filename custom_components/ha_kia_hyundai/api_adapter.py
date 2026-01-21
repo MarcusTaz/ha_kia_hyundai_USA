@@ -3,12 +3,17 @@
 This module bridges the EU library's VehicleManager to the existing
 US integration's coordinator interface, allowing us to use the working
 EU library auth/API while keeping all existing sensors and entities intact.
+
+IMPORTANT: The EU library uses synchronous `requests` for HTTP calls.
+All blocking calls must be wrapped in hass.async_add_executor_job() to
+avoid blocking the Home Assistant event loop.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
+from functools import partial
 
 from hyundai_kia_connect_api import VehicleManager, Vehicle
 from hyundai_kia_connect_api.ApiImpl import ClimateRequestOptions
@@ -19,6 +24,9 @@ from .const import (
     SeatSettings,
 )
 
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -27,19 +35,24 @@ class EUApiAdapter:
 
     This adapter provides a consistent interface that matches what the existing
     US integration coordinator expects, while using the EU library under the hood.
+
+    All EU library calls are blocking (synchronous) and must be run in an executor.
     """
 
     def __init__(
         self,
+        hass: HomeAssistant,
         vehicle_manager: VehicleManager,
         vehicle_id: str,
     ) -> None:
         """Initialize the adapter.
 
         Args:
+            hass: Home Assistant instance (needed for executor jobs)
             vehicle_manager: The EU library VehicleManager instance
             vehicle_id: The ID of the specific vehicle this adapter manages
         """
+        self._hass = hass
         self._manager = vehicle_manager
         self._vehicle_id = vehicle_id
         self._last_action: dict[str, Any] | None = None
@@ -66,13 +79,17 @@ class EUApiAdapter:
         transforms it into a format compatible with the existing US integration
         data access patterns (using dot-notation paths).
         """
-        await self._manager.check_and_refresh_token()
-        await self._manager.update_vehicle_with_cached_state(vehicle_id)
+        # Run blocking calls in executor
+        await self._hass.async_add_executor_job(
+            self._manager.check_and_refresh_token
+        )
+        await self._hass.async_add_executor_job(
+            self._manager.update_vehicle_with_cached_state,
+            vehicle_id
+        )
         vehicle = self._manager.get_vehicle(vehicle_id)
 
         # Build a nested dict structure that matches US integration's expected paths
-        # The US integration uses safely_get_json_value with paths like:
-        # "lastVehicleInfo.vehicleStatusRpt.vehicleStatus.evStatus.batteryStatus"
         return self._build_compatible_data_structure(vehicle)
 
     def _build_compatible_data_structure(self, vehicle: Vehicle) -> dict[str, Any]:
@@ -205,20 +222,10 @@ class EUApiAdapter:
         return data
 
     def _parse_seat_status(self, seat_status: Any) -> dict[str, int] | None:
-        """Parse EU library seat status to US format.
-
-        EU library uses integer values directly.
-        US integration expects a dict that becomes a tuple of (mode, level).
-
-        Returns dict with mode (0=off, 1=heat, 2=cool) and level (1-4).
-        """
+        """Parse EU library seat status to US format."""
         if seat_status is None:
             return None
 
-        # EU library returns an integer:
-        # 0 = off
-        # 1-3 = heat levels (low, medium, high)
-        # -1 to -3 = cool levels
         try:
             status = int(seat_status) if seat_status else 0
         except (ValueError, TypeError):
@@ -227,10 +234,8 @@ class EUApiAdapter:
         if status == 0:
             return {"heatVentType": 0, "heatVentLevel": 1}
         elif status > 0:
-            # Heating: map 1-3 to level 2-4 (matching US format)
             return {"heatVentType": 1, "heatVentLevel": min(status + 1, 4)}
         else:
-            # Cooling: map -1 to -3 to level 2-4
             return {"heatVentType": 2, "heatVentLevel": min(abs(status) + 1, 4)}
 
     def _format_datetime_for_us(self, dt) -> str | None:
@@ -244,56 +249,57 @@ class EUApiAdapter:
 
     def _get_climate_temp(self, vehicle: Vehicle) -> str | None:
         """Get climate temperature in a format the US integration expects."""
-        # The US integration expects string values like "72" or "LOW"/"HIGH"
-        # For now, return a default since EU library may not have this
         return "72"
 
     def _build_target_soc(self, vehicle: Vehicle) -> list[dict]:
         """Build target SOC array matching US format."""
         return [
             {
-                "plugType": 0,  # DC fast charging
+                "plugType": 0,
                 "targetSOClevel": vehicle.ev_charge_limits_dc,
             },
             {
-                "plugType": 1,  # AC charging
+                "plugType": 1,
                 "targetSOClevel": vehicle.ev_charge_limits_ac,
             },
         ]
 
     async def check_last_action_finished(self, vehicle_id: str) -> None:
-        """Check if the last action has finished.
-
-        For the EU library, we track action status differently.
-        """
+        """Check if the last action has finished."""
         if self._last_action is None:
             return
 
         action_id = self._last_action.get("xid")
         if action_id:
             try:
-                status = await self._manager.check_action_status(
-                    vehicle_id=vehicle_id,
-                    action_id=action_id,
-                    synchronous=False,
+                status = await self._hass.async_add_executor_job(
+                    partial(
+                        self._manager.check_action_status,
+                        vehicle_id=vehicle_id,
+                        action_id=action_id,
+                        synchronous=False,
+                    )
                 )
                 if status in (ORDER_STATUS.FINISHED, ORDER_STATUS.FAILED):
                     self._last_action = None
             except Exception as err:
                 _LOGGER.warning("Error checking action status: %s", err)
-                # Clear action on error to prevent stuck state
                 self._last_action = None
 
     async def lock(self, vehicle_id: str) -> None:
         """Lock the vehicle."""
         _LOGGER.debug("Locking vehicle %s", vehicle_id)
-        action_id = await self._manager.lock(vehicle_id)
+        action_id = await self._hass.async_add_executor_job(
+            self._manager.lock, vehicle_id
+        )
         self._last_action = {"name": "lock", "xid": action_id}
 
     async def unlock(self, vehicle_id: str) -> None:
         """Unlock the vehicle."""
         _LOGGER.debug("Unlocking vehicle %s", vehicle_id)
-        action_id = await self._manager.unlock(vehicle_id)
+        action_id = await self._hass.async_add_executor_job(
+            self._manager.unlock, vehicle_id
+        )
         self._last_action = {"name": "unlock", "xid": action_id}
 
     async def start_climate(
@@ -314,7 +320,7 @@ class EUApiAdapter:
             vehicle_id, set_temp, defrost, heating
         )
 
-        # Convert Fahrenheit to Celsius for EU library (it expects Celsius)
+        # Convert Fahrenheit to Celsius for EU library
         temp_celsius = None
         if set_temp is not None:
             temp_celsius = (set_temp - 32) * 5 / 9
@@ -330,25 +336,33 @@ class EUApiAdapter:
             rear_right_seat=int(right_rear_seat) if right_rear_seat else None,
         )
 
-        action_id = await self._manager.start_climate(vehicle_id, options)
+        action_id = await self._hass.async_add_executor_job(
+            self._manager.start_climate, vehicle_id, options
+        )
         self._last_action = {"name": "start_climate", "xid": action_id}
 
     async def stop_climate(self, vehicle_id: str) -> None:
         """Stop climate control."""
         _LOGGER.debug("Stopping climate for vehicle %s", vehicle_id)
-        action_id = await self._manager.stop_climate(vehicle_id)
+        action_id = await self._hass.async_add_executor_job(
+            self._manager.stop_climate, vehicle_id
+        )
         self._last_action = {"name": "stop_climate", "xid": action_id}
 
     async def start_charge(self, vehicle_id: str) -> None:
         """Start charging."""
         _LOGGER.debug("Starting charge for vehicle %s", vehicle_id)
-        action_id = await self._manager.start_charge(vehicle_id)
+        action_id = await self._hass.async_add_executor_job(
+            self._manager.start_charge, vehicle_id
+        )
         self._last_action = {"name": "start_charge", "xid": action_id}
 
     async def stop_charge(self, vehicle_id: str) -> None:
         """Stop charging."""
         _LOGGER.debug("Stopping charge for vehicle %s", vehicle_id)
-        action_id = await self._manager.stop_charge(vehicle_id)
+        action_id = await self._hass.async_add_executor_job(
+            self._manager.stop_charge, vehicle_id
+        )
         self._last_action = {"name": "stop_charge", "xid": action_id}
 
     async def set_charge_limits(
@@ -359,39 +373,41 @@ class EUApiAdapter:
             "Setting charge limits for vehicle %s: AC=%d, DC=%d",
             vehicle_id, ac_limit, dc_limit
         )
-        action_id = await self._manager.set_charge_limits(
-            vehicle_id, ac=ac_limit, dc=dc_limit
+        action_id = await self._hass.async_add_executor_job(
+            partial(
+                self._manager.set_charge_limits,
+                vehicle_id,
+                ac=ac_limit,
+                dc=dc_limit,
+            )
         )
         self._last_action = {"name": "set_charge_limits", "xid": action_id}
 
     async def force_refresh_vehicle_state(self, vehicle_id: str) -> None:
         """Force a refresh of vehicle state from the car."""
         _LOGGER.debug("Force refreshing vehicle state for %s", vehicle_id)
-        await self._manager.force_refresh_vehicle_state(vehicle_id)
+        await self._hass.async_add_executor_job(
+            self._manager.force_refresh_vehicle_state, vehicle_id
+        )
         self._last_action = {"name": "force_refresh", "xid": None}
 
     async def request_vehicle_data_sync(self, vehicle_id: str) -> None:
-        """Request vehicle to sync data (wake up the car).
-
-        This is an alias for force_refresh_vehicle_state to maintain
-        compatibility with the US integration's API interface.
-        """
+        """Request vehicle to sync data (wake up the car)."""
         await self.force_refresh_vehicle_state(vehicle_id)
 
     async def close(self) -> None:
         """Close the API connection (no-op for EU library)."""
-        # EU library doesn't require explicit cleanup
         pass
 
 
-async def create_vehicle_manager(
+def create_vehicle_manager(
     username: str,
     password: str,
     brand: int,
     pin: str = "",
     otp_handler=None,
 ) -> VehicleManager:
-    """Create and initialize a VehicleManager instance.
+    """Create a VehicleManager instance (synchronous, not async).
 
     Args:
         username: Account username/email
@@ -401,7 +417,7 @@ async def create_vehicle_manager(
         otp_handler: Optional callback for OTP handling
 
     Returns:
-        Initialized VehicleManager instance
+        VehicleManager instance (not yet initialized)
     """
     _LOGGER.info(
         "Creating VehicleManager for region=USA, brand=%d, username=%s",
