@@ -7,6 +7,17 @@ EU library auth/API while keeping all existing sensors and entities intact.
 IMPORTANT: The EU library uses synchronous `requests` for HTTP calls.
 All blocking calls must be wrapped in hass.async_add_executor_job() to
 avoid blocking the Home Assistant event loop.
+
+SEAT CLIMATE DETECTION:
+The EU library stores raw API response in vehicle.data. We detect seat
+climate capabilities by checking if seatHeaterVentState exists in the
+raw data. For USA region, the library uses different property names:
+- front_left_seat_heater_is_on (USA) vs front_left_seat_status (EU)
+
+We parse the raw data to determine:
+1. Whether seat climate is supported (does the path exist?)
+2. What type of seat climate (heat only, cool only, or both)
+3. Current seat status values
 """
 
 from __future__ import annotations
@@ -23,11 +34,104 @@ from .const import (
     REGION_USA,
     SeatSettings,
 )
+from .util import safely_get_json_value
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _get_seat_status_from_raw(raw_data: dict | None, seat_key: str) -> int | None:
+    """Get seat status value from raw API data.
+
+    Args:
+        raw_data: Raw vehicle data dict (vehicle.data)
+        seat_key: Seat key (flSeatHeatState, frSeatHeatState, etc.)
+
+    Returns:
+        Integer seat status value or None if not present
+    """
+    if not raw_data:
+        return None
+    return safely_get_json_value(
+        raw_data,
+        f"lastVehicleInfo.vehicleStatusRpt.vehicleStatus.seatHeaterVentState.{seat_key}",
+        int,
+    )
+
+
+def _detect_seat_capabilities(raw_data: dict | None) -> dict[str, Any]:
+    """Detect seat climate capabilities from raw API data.
+
+    This function checks the raw API response to determine if seat climate
+    control is available and what options are supported. We don't hard-code
+    capabilities - we read them from what the API actually returns.
+
+    Args:
+        raw_data: Raw vehicle data dict (vehicle.data)
+
+    Returns:
+        Dict with seat capability info:
+        - has_front_seats: bool - whether front seat climate exists
+        - has_rear_seats: bool - whether rear seat climate exists
+        - front_heat_type: int - 0=none, 1=heat only, 2=cool only, 3=heat+cool
+        - front_heat_steps: int - number of levels (2 or 3)
+        - rear_heat_type: int
+        - rear_heat_steps: int
+    """
+    result = {
+        "has_front_seats": False,
+        "has_rear_seats": False,
+        "front_heat_type": 0,
+        "front_heat_steps": 3,  # Default to 3 steps
+        "rear_heat_type": 0,
+        "rear_heat_steps": 3,
+    }
+
+    if not raw_data:
+        return result
+
+    # Check if seatHeaterVentState exists in raw data
+    seat_state = safely_get_json_value(
+        raw_data,
+        "lastVehicleInfo.vehicleStatusRpt.vehicleStatus.seatHeaterVentState",
+        dict,
+    )
+
+    if not seat_state:
+        _LOGGER.debug("No seatHeaterVentState in raw data - vehicle has no seat climate")
+        return result
+
+    # Check front seats
+    fl_state = seat_state.get("flSeatHeatState")
+    fr_state = seat_state.get("frSeatHeatState")
+    if fl_state is not None or fr_state is not None:
+        result["has_front_seats"] = True
+        # Determine heat type from values (0-8 scale in USA)
+        # 0=Off, 1=On, 2=Off, 3-5=Cool, 6-8=Heat
+        # If we see values >= 3, we have cool. If we see values >= 6, we have heat.
+        # For now, assume heat+cool (type 3) if feature is present
+        result["front_heat_type"] = 3
+        result["front_heat_steps"] = 3
+        _LOGGER.debug(
+            "Front seats detected: fl=%s, fr=%s, type=%d",
+            fl_state, fr_state, result["front_heat_type"]
+        )
+
+    # Check rear seats
+    rl_state = seat_state.get("rlSeatHeatState")
+    rr_state = seat_state.get("rrSeatHeatState")
+    if rl_state is not None or rr_state is not None:
+        result["has_rear_seats"] = True
+        result["rear_heat_type"] = 3
+        result["rear_heat_steps"] = 3
+        _LOGGER.debug(
+            "Rear seats detected: rl=%s, rr=%s, type=%d",
+            rl_state, rr_state, result["rear_heat_type"]
+        )
+
+    return result
 
 
 class EUApiAdapter:
@@ -98,12 +202,46 @@ class EUApiAdapter:
         The US integration uses safely_get_json_value() to access data via
         dot-notation paths. This method creates a nested dict that matches
         those expected paths.
+
+        IMPORTANT: Vehicle capabilities (like seat climate) are detected from
+        the actual API data stored in vehicle.data, not hard-coded.
         """
-        # Get seat status in the expected format (mode, level) tuple
-        front_left_seat = self._parse_seat_status(vehicle.front_left_seat_status)
-        front_right_seat = self._parse_seat_status(vehicle.front_right_seat_status)
-        rear_left_seat = self._parse_seat_status(vehicle.rear_left_seat_status)
-        rear_right_seat = self._parse_seat_status(vehicle.rear_right_seat_status)
+        # Get raw data for capability detection
+        raw_data = getattr(vehicle, "data", None)
+
+        # Detect seat capabilities from raw API data
+        seat_caps = _detect_seat_capabilities(raw_data)
+        _LOGGER.debug(
+            "Seat capabilities for %s: %s", self._vehicle_id, seat_caps
+        )
+
+        # Get seat status from raw data (USA uses different property names)
+        # Try USA-specific properties first, then fall back to standard
+        fl_raw = _get_seat_status_from_raw(raw_data, "flSeatHeatState")
+        fr_raw = _get_seat_status_from_raw(raw_data, "frSeatHeatState")
+        rl_raw = _get_seat_status_from_raw(raw_data, "rlSeatHeatState")
+        rr_raw = _get_seat_status_from_raw(raw_data, "rrSeatHeatState")
+
+        # Also check the vehicle object properties as fallback
+        if fl_raw is None:
+            fl_raw = getattr(vehicle, "front_left_seat_heater_is_on", None)
+        if fr_raw is None:
+            fr_raw = getattr(vehicle, "front_right_seat_heater_is_on", None)
+        if rl_raw is None:
+            rl_raw = getattr(vehicle, "rear_left_seat_heater_is_on", None)
+        if rr_raw is None:
+            rr_raw = getattr(vehicle, "rear_right_seat_heater_is_on", None)
+
+        _LOGGER.debug(
+            "Raw seat values: fl=%s, fr=%s, rl=%s, rr=%s",
+            fl_raw, fr_raw, rl_raw, rr_raw
+        )
+
+        # Convert raw seat status to the format expected by US integration
+        front_left_seat = self._parse_seat_status_raw(fl_raw) if seat_caps["has_front_seats"] else None
+        front_right_seat = self._parse_seat_status_raw(fr_raw) if seat_caps["has_front_seats"] else None
+        rear_left_seat = self._parse_seat_status_raw(rl_raw) if seat_caps["has_rear_seats"] else None
+        rear_right_seat = self._parse_seat_status_raw(rr_raw) if seat_caps["has_rear_seats"] else None
 
         # Build the nested structure matching US integration paths
         data = {
@@ -117,20 +255,24 @@ class EUApiAdapter:
                     "remoteFeature": {
                         "lock": True,  # Assume remote lock is available
                         "start": True,  # Assume remote start is available
-                        "heatedSeat": front_left_seat is not None,
-                        "ventSeat": front_left_seat is not None,
+                        # Detect from actual API data, not hard-coded
+                        "heatedSeat": seat_caps["has_front_seats"] and seat_caps["front_heat_type"] in (1, 3),
+                        "ventSeat": seat_caps["has_front_seats"] and seat_caps["front_heat_type"] in (2, 3),
                     }
                 },
                 "maintenance": {
                     "nextServiceMile": vehicle.next_service_distance,
                 },
+                # Seat options - only populated if seats are detected in API data
                 "heatVentSeat": {
                     "driverSeat": {
-                        "heatVentType": 1 if front_left_seat else 0,
-                    },
+                        "heatVentType": seat_caps["front_heat_type"],
+                        "heatVentStep": seat_caps["front_heat_steps"],
+                    } if seat_caps["has_front_seats"] else {},
                     "rearLeftSeat": {
-                        "heatVentType": 1 if rear_left_seat else 0,
-                    },
+                        "heatVentType": seat_caps["rear_heat_type"],
+                        "heatVentStep": seat_caps["rear_heat_steps"],
+                    } if seat_caps["has_rear_seats"] else {},
                 },
             },
             "lastVehicleInfo": {
@@ -221,22 +363,50 @@ class EUApiAdapter:
         }
         return data
 
-    def _parse_seat_status(self, seat_status: Any) -> dict[str, int] | None:
-        """Parse EU library seat status to US format."""
-        if seat_status is None:
+    def _parse_seat_status_raw(self, raw_value: int | None) -> dict[str, int] | None:
+        """Parse raw USA API seat status integer to US integration format.
+
+        The USA API returns seat status as integers:
+        - 0 = Off
+        - 1 = On (generic)
+        - 2 = Off
+        - 3 = Low Cool
+        - 4 = Medium Cool
+        - 5 = High Cool
+        - 6 = Low Heat
+        - 7 = Medium Heat
+        - 8 = High Heat
+
+        The US integration expects format: {heatVentType: X, heatVentLevel: Y}
+        - heatVentType: 0=off, 1=heat, 2=cool
+        - heatVentLevel: 1-4 (1=off, 2=low, 3=med, 4=high)
+        """
+        if raw_value is None:
             return None
 
         try:
-            status = int(seat_status) if seat_status else 0
+            status = int(raw_value)
         except (ValueError, TypeError):
             status = 0
 
-        if status == 0:
+        # Map raw value to (type, level) format
+        if status == 0 or status == 2:
+            # Off
             return {"heatVentType": 0, "heatVentLevel": 1}
-        elif status > 0:
-            return {"heatVentType": 1, "heatVentLevel": min(status + 1, 4)}
+        elif status == 1:
+            # Generic "On" - assume heat
+            return {"heatVentType": 1, "heatVentLevel": 2}
+        elif status >= 3 and status <= 5:
+            # Cool: 3=Low, 4=Medium, 5=High
+            level = status - 1  # Maps 3->2, 4->3, 5->4
+            return {"heatVentType": 2, "heatVentLevel": level}
+        elif status >= 6 and status <= 8:
+            # Heat: 6=Low, 7=Medium, 8=High
+            level = status - 4  # Maps 6->2, 7->3, 8->4
+            return {"heatVentType": 1, "heatVentLevel": level}
         else:
-            return {"heatVentType": 2, "heatVentLevel": min(abs(status) + 1, 4)}
+            # Unknown value, return off
+            return {"heatVentType": 0, "heatVentLevel": 1}
 
     def _format_datetime_for_us(self, dt) -> str | None:
         """Format datetime for US integration (YYYYMMDDHHMMSS)."""
