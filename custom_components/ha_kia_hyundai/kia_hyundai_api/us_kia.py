@@ -142,33 +142,25 @@ class UsKia:
         return self._ssl_context
 
     def _api_headers(self, vehicle_key: str | None = None) -> dict:
-        """Generate API headers matching the current Kia iOS app."""
-        offset = int(time.localtime().tm_gmtoff / 60 / 60)
-        # Generate clientuuid as hash of device_id (similar to iOS app)
-        client_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, self.device_id))
-        
-        # FIXED: Updated headers to match current Kia iOS app
+        """Generate API headers matching the original Android app."""
         headers = {
-            "content-type": "application/json;charset=utf-8",
-            "accept": "application/json",
+            "content-type": "application/json;charset=UTF-8",
+            "accept": "application/json, text/plain, */*",
             "accept-encoding": "gzip, deflate, br",
             "accept-language": "en-US,en;q=0.9",
-            "accept-charset": "utf-8",
             "apptype": "L",
-            "appversion": "7.22.0",  # Updated from 7.12.1
-            "clientid": "SPACL716-APL",  # Updated from MWAMOBILE
-            "clientuuid": client_uuid,  # Added
+            "appversion": "7.12.1",
+            "clientid": "MWAMOBILE",
             "from": "SPA",
             "host": API_URL_HOST,
             "language": "0",
-            "offset": str(offset),
-            "ostype": "iOS",  # Changed from Android
-            "osversion": "15.8.5",  # Updated
-            "phonebrand": "iPhone",  # Added
-            "secretkey": "sydnat-9kykci-Kuhtep-h5nK",  # Updated secret key
+            "offset": str(int(time.localtime().tm_gmtoff / 60 / 60)),
+            "ostype": "Android",
+            "osversion": "11",
+            "secretkey": "98er-w34rf-ibf3-3f6h",
             "to": "APIGW",
-            "tokentype": "A",  # Changed from G
-            "user-agent": "KIAPrimo_iOS/37 CFNetwork/1335.0.3.4 Darwin/21.6.0",  # Updated
+            "tokentype": "G",
+            "user-agent": "okhttp/4.10.0",
             "deviceid": self.device_id,
             "date": datetime.now(tz=pytz.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"),
         }
