@@ -4,8 +4,10 @@ This integration uses an embedded, fixed version of kia-hyundai-api with:
 - Updated API headers matching the current Kia iOS app
 - Fixed OTP flow with proper _complete_login_with_otp step
 - Added tncFlag to login payload
+- Shared API connection across all vehicles to prevent session conflicts
 """
 
+import asyncio
 import logging
 from datetime import timedelta
 
@@ -36,6 +38,10 @@ from .vehicle_coordinator import VehicleCoordinator
 
 
 _LOGGER = logging.getLogger(__name__)
+
+# Key for shared API connection in hass.data
+API_CONNECTION_KEY = "_api_connection"
+API_CONNECTION_LOCK_KEY = "_api_lock"
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry):
@@ -68,6 +74,69 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     return True
 
 
+async def _get_or_create_api_connection(
+    hass: HomeAssistant,
+    username: str,
+    password: str,
+    device_id: str | None,
+    refresh_token: str | None,
+) -> UsKia:
+    """Get or create a shared API connection for all vehicles.
+    
+    This prevents session conflicts when multiple vehicles are set up
+    simultaneously with the same account.
+    """
+    hass.data.setdefault(DOMAIN, {})
+    
+    # Create lock if it doesn't exist
+    if API_CONNECTION_LOCK_KEY not in hass.data[DOMAIN]:
+        hass.data[DOMAIN][API_CONNECTION_LOCK_KEY] = asyncio.Lock()
+    
+    lock = hass.data[DOMAIN][API_CONNECTION_LOCK_KEY]
+    
+    async with lock:
+        # Check if we already have a valid connection
+        existing_connection = hass.data[DOMAIN].get(API_CONNECTION_KEY)
+        if existing_connection is not None:
+            # Verify the connection is still valid
+            if existing_connection.session_id is not None:
+                _LOGGER.debug("Reusing existing API connection")
+                return existing_connection
+            else:
+                _LOGGER.debug("Existing connection has no session, creating new one")
+        
+        _LOGGER.info("Creating new shared API connection")
+        
+        client_session = async_get_clientsession(hass)
+        
+        # Dummy OTP callback - should not be called during normal operation
+        async def otp_callback(context):
+            _LOGGER.error("OTP callback called unexpectedly during entry setup")
+            raise ConfigEntryAuthFailed("OTP required - please reconfigure the integration")
+        
+        # Create API connection with stored credentials
+        api_connection = UsKia(
+            username=username,
+            password=password,
+            otp_callback=otp_callback,
+            device_id=device_id,
+            refresh_token=refresh_token,
+            client_session=client_session,
+        )
+        
+        _LOGGER.debug("Logging in to Kia API...")
+        await api_connection.login()
+        _LOGGER.debug("Login successful, session_id: %s", api_connection.session_id is not None)
+        
+        # Get vehicles
+        await api_connection.get_vehicles()
+        
+        # Store the connection for reuse
+        hass.data[DOMAIN][API_CONNECTION_KEY] = api_connection
+        
+        return api_connection
+
+
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Set up Kia/Hyundai US from a config entry."""
     username = config_entry.data[CONF_USERNAME]
@@ -83,31 +152,15 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     _LOGGER.info("Setting up Kia/Hyundai US integration for vehicle %s", vehicle_id)
 
     try:
-        client_session = async_get_clientsession(hass)
-        
-        # Dummy OTP callback - should not be called during normal operation
-        # since we have a valid refresh_token from config_flow
-        async def otp_callback(context):
-            _LOGGER.error("OTP callback called unexpectedly during entry setup")
-            raise ConfigEntryAuthFailed("OTP required - please reconfigure the integration")
-
-        # Create API connection with stored credentials
-        api_connection = UsKia(
+        # Get or create shared API connection
+        api_connection = await _get_or_create_api_connection(
+            hass=hass,
             username=username,
             password=password,
-            otp_callback=otp_callback,
             device_id=device_id,
             refresh_token=refresh_token,
-            client_session=client_session,
         )
 
-        _LOGGER.debug("Logging in to Kia API...")
-        await api_connection.login()
-        _LOGGER.debug("Login successful, session_id: %s", api_connection.session_id is not None)
-
-        # Get vehicles to find the one we want
-        await api_connection.get_vehicles()
-        
         if api_connection.vehicles is None:
             raise ConfigEntryError("No vehicles found in account")
 
@@ -153,15 +206,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         await coordinator.async_config_entry_first_refresh()
         _LOGGER.debug("First refresh completed for %s", vehicle_name)
 
-        # Store coordinator
-        hass.data.setdefault(DOMAIN, {})
+        # Store coordinator (but not the shared api_connection - it's stored separately)
         hass.data[DOMAIN][vehicle_id] = coordinator
 
         # Set up platforms
         await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
 
-        # Set up services
-        await async_setup_services(hass)
+        # Set up services (not async, don't await)
+        async_setup_services(hass)
 
         return True
 
@@ -182,9 +234,18 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     if unload_ok:
         hass.data[DOMAIN].pop(vehicle_id, None)
         
-        # Unload services if no more entries
-        if not hass.data[DOMAIN]:
-            await async_unload_services(hass)
+        # Check if any vehicle coordinators remain (exclude special keys)
+        remaining_vehicles = [
+            k for k in hass.data[DOMAIN].keys() 
+            if not k.startswith("_")
+        ]
+        
+        # Unload services and cleanup if no more vehicle entries
+        if not remaining_vehicles:
+            async_unload_services(hass)
+            # Also remove the shared API connection
+            hass.data[DOMAIN].pop(API_CONNECTION_KEY, None)
+            hass.data[DOMAIN].pop(API_CONNECTION_LOCK_KEY, None)
             hass.data.pop(DOMAIN, None)
 
     return unload_ok
