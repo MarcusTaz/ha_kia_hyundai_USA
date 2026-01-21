@@ -458,18 +458,19 @@ class UsKia:
         url = API_URL_BASE + "cmm/gvi"
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
         _LOGGER.debug("Getting cached status for vehicle_id=%s, vehicle_key=%s", vehicle_id, vehicle_key)
-        # Payload format matching EU library (hyundai-kia-connect-api)
+        # Payload format: Use US API values for climate support
+        # seatHeatCoolOption and vehicleFeature must be "1" to get climate data
         body = {
             "vehicleConfigReq": {
                 "airTempRange": "0",
                 "maintenance": "1",
-                "seatHeatCoolOption": "0",  # EU library uses 0
+                "seatHeatCoolOption": "1",  # Must be 1 for seat climate data
                 "vehicle": "1",
-                "vehicleFeature": "0",  # EU library uses 0
+                "vehicleFeature": "1",  # Must be 1 for climate features
             },
             "vehicleInfoReq": {
                 "drivingActivty": "0",
-                "dtc": "1",  # EU library uses 1
+                "dtc": "1",
                 "enrollment": "1",
                 "functionalCards": "0",
                 "location": "1",
