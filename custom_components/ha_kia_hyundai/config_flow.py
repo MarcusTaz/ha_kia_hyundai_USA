@@ -28,6 +28,7 @@ from hyundai_kia_connect_api.exceptions import AuthenticationError
 from .const import (
     CONF_BRAND,
     CONF_PIN,
+    CONF_TOKEN,
     DOMAIN,
     CONFIG_FLOW_VERSION,
     CONF_VEHICLE_ID,
@@ -143,6 +144,10 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 else:
                     # Login succeeded without OTP (cached token)
                     _LOGGER.info("Login succeeded without OTP")
+                    # Save the token for later use
+                    if self.vehicle_manager.token:
+                        self.data[CONF_TOKEN] = self.vehicle_manager.token.to_dict()
+                        _LOGGER.info("Token saved for future authentication")
                     return await self._finalize_setup()
 
             except AuthenticationError as e:
@@ -231,6 +236,11 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 )
                 _LOGGER.info("OTP verified successfully!")
 
+                # Save the token for later use (avoids OTP on restart)
+                if self.vehicle_manager.token:
+                    self.data[CONF_TOKEN] = self.vehicle_manager.token.to_dict()
+                    _LOGGER.info("Token saved for future authentication")
+
                 return await self._finalize_setup()
 
             except AuthenticationError as e:
@@ -304,6 +314,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 CONF_VEHICLE_ID: vehicle_id,
                 CONF_BRAND: self.data[CONF_BRAND],
                 CONF_PIN: self.data.get(CONF_PIN, ""),
+                CONF_TOKEN: self.data.get(CONF_TOKEN),  # Include saved token
             }
 
             await self.async_set_unique_id(vehicle_id)
@@ -335,6 +346,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 CONF_VEHICLE_ID: vehicle_id,
                 CONF_BRAND: self.data[CONF_BRAND],
                 CONF_PIN: self.data.get(CONF_PIN, ""),
+                CONF_TOKEN: self.data.get(CONF_TOKEN),  # Include saved token
             }
 
             created_entries.append((vehicle_name, entry_data))

@@ -405,32 +405,45 @@ def create_vehicle_manager(
     password: str,
     brand: int,
     pin: str = "",
-    otp_handler=None,
+    token_dict: dict | None = None,
 ) -> VehicleManager:
-    """Create a VehicleManager instance (synchronous, not async).
+    """Create a VehicleManager instance with optional saved token.
 
     Args:
         username: Account username/email
         password: Account password
         brand: Brand code (1=Kia, 2=Hyundai, 3=Genesis)
         pin: Account PIN (required for some operations)
-        otp_handler: Optional callback for OTP handling
+        token_dict: Optional saved token dict from previous authentication
 
     Returns:
-        VehicleManager instance (not yet initialized)
+        VehicleManager instance
     """
+    from hyundai_kia_connect_api import Token
+
     _LOGGER.info(
         "Creating VehicleManager for region=USA, brand=%d, username=%s",
         brand, username
     )
 
+    # Restore token from saved dict if available
+    token = None
+    if token_dict:
+        try:
+            token = Token.from_dict(token_dict)
+            _LOGGER.info("Restored saved token (valid_until: %s)", token.valid_until)
+        except Exception as e:
+            _LOGGER.warning("Failed to restore token: %s", e)
+            token = None
+
+    # V4 API: pass token directly, no otp_handler
     manager = VehicleManager(
         region=REGION_USA,
         brand=brand,
         username=username,
         password=password,
         pin=pin,
-        otp_handler=otp_handler,
+        token=token,
     )
 
     return manager
