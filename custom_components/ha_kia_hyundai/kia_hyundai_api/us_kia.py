@@ -454,6 +454,7 @@ class UsKia:
         """Get cached vehicle status"""
         url = API_URL_BASE + "cmm/gvi"
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
+        _LOGGER.debug("Getting cached status for vehicle_id=%s, vehicle_key=%s", vehicle_id, vehicle_key)
         body = {
             "vehicleConfigReq": {
                 "airTempRange": "0",
@@ -471,7 +472,7 @@ class UsKia:
                 "vehicleStatus": "1",
                 "weather": "0",
             },
-            "vinKey": [vehicle_key],
+            "vinKey": vehicle_key,  # Pass as string, not list
         }
         response = await self._post_request_with_logging_and_errors_raised(
             vehicle_key=vehicle_key,
