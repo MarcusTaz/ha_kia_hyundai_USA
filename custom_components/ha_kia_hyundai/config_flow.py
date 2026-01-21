@@ -17,7 +17,6 @@ from homeassistant.const import (
 from homeassistant.core import callback
 
 from hyundai_kia_connect_api import VehicleManager
-from hyundai_kia_connect_api.KiaUvoApiUSA import KiaUvoApiUSA
 
 from .const import (
     CONF_BRAND,
@@ -191,35 +190,6 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
 
             try:
                 _LOGGER.info("Creating VehicleManager for %s (%s)", brand_name, brand)
-
-                # Add debug wrapper to log OTP verification details
-                _original_verify_otp = KiaUvoApiUSA._verify_otp
-                def _debug_verify_otp(self_api, otp_key: str, otp_code: str, xid: str):
-                    _LOGGER.info("=== _verify_otp called ===")
-                    _LOGGER.info(f"  otp_key: {otp_key[:20]}...")
-                    _LOGGER.info(f"  otp_code: '{otp_code}' (len={len(otp_code)}, repr={repr(otp_code)})")
-                    _LOGGER.info(f"  xid: {xid}")
-                    try:
-                        result = _original_verify_otp(self_api, otp_key, otp_code, xid)
-                        _LOGGER.info(f"  SUCCESS: {result}")
-                        return result
-                    except Exception as e:
-                        _LOGGER.error(f"  FAILED: {e}")
-                        raise
-                KiaUvoApiUSA._verify_otp = _debug_verify_otp
-
-                # Also wrap _send_otp
-                _original_send_otp = KiaUvoApiUSA._send_otp
-                def _debug_send_otp(self_api, otp_key: str, notify_type: str, xid: str):
-                    _LOGGER.info("=== _send_otp called ===")
-                    _LOGGER.info(f"  otp_key: {otp_key[:20]}...")
-                    _LOGGER.info(f"  notify_type: '{notify_type}'")
-                    _LOGGER.info(f"  xid: {xid}")
-                    result = _original_send_otp(self_api, otp_key, notify_type, xid)
-                    _LOGGER.info(f"  Response: {result}")
-                    return result
-                KiaUvoApiUSA._send_otp = _debug_send_otp
-
                 self.vehicle_manager = VehicleManager(
                     region=REGION_USA,
                     brand=brand,
