@@ -142,29 +142,36 @@ class UsKia:
         return self._ssl_context
 
     def _api_headers(self, vehicle_key: str | None = None) -> dict:
-        """Generate API headers matching the current Kia iOS app.
+        """Generate API headers matching the EU library's iOS headers.
         
-        Uses iOS headers which work for both OTP and vehicle status.
+        These headers are copied exactly from hyundai-kia-connect-api KiaUvoApiUSA.py
+        which has working OTP for the USA region.
         """
         offset = int(time.localtime().tm_gmtoff / 60 / 60)
+        # Generate clientuuid as hash of device_id (same as EU library)
+        client_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, self.device_id))
+        
         headers = {
-            "content-type": "application/json;charset=UTF-8",
+            "content-type": "application/json;charset=utf-8",
             "accept": "application/json",
             "accept-encoding": "gzip, deflate, br",
             "accept-language": "en-US,en;q=0.9",
+            "accept-charset": "utf-8",
             "apptype": "L",
             "appversion": "7.22.0",
-            "clientid": "MWAMOBILE",
+            "clientid": "SPACL716-APL",
+            "clientuuid": client_uuid,
             "from": "SPA",
             "host": API_URL_HOST,
             "language": "0",
             "offset": str(offset),
             "ostype": "iOS",
-            "osversion": "18.1",
-            "secretkey": "98er-w34rf-ibf3-3f6h",
+            "osversion": "15.8.5",
+            "phonebrand": "iPhone",
+            "secretkey": "sydnat-9kykci-Kuhtep-h5nK",
             "to": "APIGW",
-            "tokentype": "G",
-            "user-agent": "okhttp/4.10.0",
+            "tokentype": "A",
+            "user-agent": "KIAPrimo_iOS/37 CFNetwork/1335.0.3.4 Darwin/21.6.0",
             "deviceid": self.device_id,
             "date": datetime.now(tz=pytz.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"),
         }
