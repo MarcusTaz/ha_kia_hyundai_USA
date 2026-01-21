@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Kia/Hyundai US Auth",
-        "description": "Configure your Kia/Hyundai Connect credentials. OTP will be sent to your registered phone/email.",
+        "description": "Configure your Kia/Hyundai Connect credentials.",
         "data": {
           "username": "Email/Username",
           "password": "Password",
@@ -11,9 +11,16 @@
           "pin": "PIN (optional, required for some operations)"
         }
       },
+      "otp_method": {
+        "title": "Select OTP Delivery",
+        "description": "Choose where to send the One Time Password.",
+        "data": {
+          "otp_method": "Send OTP to"
+        }
+      },
       "otp_code": {
         "title": "Enter OTP Code",
-        "description": "Enter the One Time Password sent to your phone or email.",
+        "description": "Enter the One Time Password sent to your {method}.",
         "data": {
           "otp_code": "OTP Code"
         }
