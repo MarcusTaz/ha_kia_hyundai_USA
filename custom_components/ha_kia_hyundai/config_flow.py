@@ -87,16 +87,29 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         return KiaUvoOptionFlowHandler(config_entry)
 
     async def async_step_reauth(self, user_input: dict[str, Any] | None = None):
-        """Handle re-authentication."""
-        _LOGGER.debug("Reauth with input: %s", user_input)
-        return await self.async_step_user(user_input)
+        """Handle re-authentication.
+        
+        When reauth is triggered, we get the existing config entry data as user_input,
+        but it doesn't contain otp_type (which is only used during initial setup).
+        We need to show the user form to get fresh credentials.
+        """
+        _LOGGER.debug("Reauth triggered, showing user form")
+        # Store the existing entry data for reference (e.g., username)
+        if user_input is not None:
+            # Pre-populate the username from existing config
+            self.data[CONF_USERNAME] = user_input.get(CONF_USERNAME, "")
+        # Show the user form without passing the incomplete data
+        return await self.async_step_user(None)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Handle user step - credentials input."""
         _LOGGER.debug("User step with input: %s", user_input)
 
+        # Get default username from stored data (e.g., from reauth)
+        default_username = self.data.get(CONF_USERNAME, "")
+        
         data_schema = vol.Schema({
-            vol.Required(CONF_USERNAME): str,
+            vol.Required(CONF_USERNAME, default=default_username): str,
             vol.Required(CONF_PASSWORD): str,
             vol.Required(CONF_OTP_TYPE, default="SMS"): vol.In(["EMAIL", "SMS"]),
         })
