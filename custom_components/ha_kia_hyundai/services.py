@@ -6,7 +6,7 @@ from homeassistant.const import ATTR_DEVICE_ID
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import device_registry
 
-from .const import DOMAIN, STR_TO_ENUM
+from .const import DOMAIN, STR_TO_SEAT_SETTING
 from .vehicle_coordinator import VehicleCoordinator
 
 SERVICE_START_CLIMATE = "start_climate"
@@ -44,13 +44,13 @@ def async_setup_services(hass: HomeAssistant):
         if set_temp is not None:
             set_temp = int(set_temp)
         if driver_seat is not None:
-            driver_seat = STR_TO_ENUM[driver_seat]
+            driver_seat = STR_TO_SEAT_SETTING[driver_seat]
         if passenger_seat is not None:
-            passenger_seat = STR_TO_ENUM[passenger_seat]
+            passenger_seat = STR_TO_SEAT_SETTING[passenger_seat]
         if left_rear_seat is not None:
-            left_rear_seat = STR_TO_ENUM[left_rear_seat]
+            left_rear_seat = STR_TO_SEAT_SETTING[left_rear_seat]
         if right_rear_seat is not None:
-            right_rear_seat = STR_TO_ENUM[right_rear_seat]
+            right_rear_seat = STR_TO_SEAT_SETTING[right_rear_seat]
 
         await coordinator.api_connection.start_climate(
             vehicle_id=coordinator.vehicle_id,

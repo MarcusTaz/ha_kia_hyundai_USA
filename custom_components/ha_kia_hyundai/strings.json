@@ -2,44 +2,49 @@
   "config": {
     "step": {
       "user": {
-        "title": "Kia US Auth",
-        "description": "Configure your Credentials.",
+        "title": "Kia/Hyundai US Auth",
+        "description": "Configure your Kia/Hyundai Connect credentials. OTP will be sent to your registered phone/email.",
         "data": {
-          "username": "Username",
+          "username": "Email/Username",
           "password": "Password",
-          "otp_type": "One Time Password Type"
+          "brand": "Vehicle Brand",
+          "pin": "PIN (optional, required for some operations)"
         }
       },
       "otp_code": {
-        "title": "Kia US OTP",
-        "description": "Enter your One Time Password.",
+        "title": "Enter OTP Code",
+        "description": "Enter the One Time Password sent to your phone or email.",
         "data": {
-          "otp_code": "One Time Password"
+          "otp_code": "OTP Code"
         }
       },
       "pick_vehicle": {
-        "title": "Kia US Vehicle",
-        "description": "Pick which vehicle to use.",
+        "title": "Kia/Hyundai US Vehicle",
+        "description": "All vehicles will be added automatically.",
         "data": {
           "vehicle_id": "Vehicle"
         }
       },
       "reauth_confirm": {
         "title": "[%key:common::config_flow::title::reauth%]",
-        "description": "The Kia US integration needs to re-authenticate your account."
+        "description": "The Kia/Hyundai US integration needs to re-authenticate your account."
       }
     },
     "abort": {
-      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]",
+      "already_configured": "All vehicles are already configured.",
+      "unknown": "Unknown error occurred."
     },
     "error": {
-      "auth": "Login failed into Kia US. Please use official Kia US app to logout and log back in and try again."
+      "auth": "Login failed. Please verify your credentials and try again.",
+      "timeout": "Authentication timed out. Please try again.",
+      "no_vehicles": "No vehicles found in your account."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Kia US: Configuration",
+        "title": "Kia/Hyundai US: Configuration",
         "data": {
           "scan_interval": "Scan Interval in Minutes"
         }

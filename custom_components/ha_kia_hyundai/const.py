@@ -1,5 +1,5 @@
 # Configuration Constants
-from kia_hyundai_api.const import SeatSettings
+from enum import IntEnum
 
 from homeassistant.const import Platform
 
@@ -10,6 +10,8 @@ CONF_OTP_CODE: str = "otp_code"
 CONF_DEVICE_ID: str = "device_id"
 CONF_REFRESH_TOKEN: str = "refresh_token"
 CONF_ACCESS_TOKEN: str = "access_token"
+CONF_BRAND: str = "brand"
+CONF_PIN: str = "pin"
 
 CONFIG_FLOW_TEMP_VEHICLES: str = "vehicles"
 
@@ -19,7 +21,7 @@ TEMPERATURE_MIN = 62
 TEMPERATURE_MAX = 82
 
 # Integration Setting Constants
-CONFIG_FLOW_VERSION: int = 3
+CONFIG_FLOW_VERSION: int = 4  # Bump version for EU library migration
 PLATFORMS = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
@@ -35,17 +37,40 @@ PLATFORMS = [
 # Sensor Specific Constants
 DATE_FORMAT: str = "%Y-%m-%d %H:%M:%S.%f"
 
+# EU Library seat status values (different from old US library)
+# The EU library uses integer values for seat heating/cooling
+# 0 = Off, positive = heat level, negative = cool level (varies by vehicle)
+# We map the raw seat status tuple (mode, level) to string descriptions
 SEAT_STATUS = {
+    (0, 0): "Off",
     (0, 1): "Off",
     (1, 4): "High Heat",
     (1, 3): "Medium Heat",
     (1, 2): "Low Heat",
+    (1, 1): "Low Heat",
     (2, 4): "High Cool",
     (2, 3): "Medium Cool",
     (2, 2): "Low Cool",
+    (2, 1): "Low Cool",
 }
 
-STR_TO_ENUM = {
+
+class SeatSettings(IntEnum):
+    """Seat heating/cooling settings for climate control.
+
+    These match the EU library's expected integer values for seat settings.
+    """
+
+    NONE = 0
+    HeatLow = 1
+    HeatMedium = 2
+    HeatHigh = 3
+    CoolLow = -1
+    CoolMedium = -2
+    CoolHigh = -3
+
+
+STR_TO_SEAT_SETTING = {
     "Off": SeatSettings.NONE,
     "High Heat": SeatSettings.HeatHigh,
     "Medium Heat": SeatSettings.HeatMedium,
@@ -54,3 +79,17 @@ STR_TO_ENUM = {
     "Medium Cool": SeatSettings.CoolMedium,
     "Low Cool": SeatSettings.CoolLow,
 }
+
+# Brand constants matching EU library
+BRAND_KIA = 1
+BRAND_HYUNDAI = 2
+BRAND_GENESIS = 3
+
+BRANDS = {
+    "Kia": BRAND_KIA,
+    "Hyundai": BRAND_HYUNDAI,
+    "Genesis": BRAND_GENESIS,
+}
+
+# Region constant for USA
+REGION_USA = 3

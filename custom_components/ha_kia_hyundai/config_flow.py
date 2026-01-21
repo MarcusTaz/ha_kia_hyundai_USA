@@ -1,6 +1,7 @@
+"""Config flow for Kia/Hyundai US integration using EU library."""
+
 import asyncio
 import logging
-from sqlite3 import DataError
 from typing import Any
 
 import voluptuous as vol
@@ -13,30 +14,31 @@ from homeassistant.const import (
     CONF_SCAN_INTERVAL,
 )
 from homeassistant.core import callback
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from kia_hyundai_api import UsKia
+
+from hyundai_kia_connect_api import VehicleManager
 
 from .const import (
-    CONF_DEVICE_ID,
+    CONF_BRAND,
+    CONF_PIN,
     CONF_OTP_CODE,
-    CONF_OTP_TYPE,
-    CONF_REFRESH_TOKEN,
     DOMAIN,
     CONFIG_FLOW_VERSION,
     CONF_VEHICLE_ID,
     DEFAULT_SCAN_INTERVAL,
     CONFIG_FLOW_TEMP_VEHICLES,
+    REGION_USA,
+    BRANDS,
+    BRAND_KIA,
 )
-from . import patch_api_headers
 
 _LOGGER = logging.getLogger(__name__)
 
-class OneTimePasswordStarted(Exception):
-    pass
-
 
 class KiaUvoOptionFlowHandler(OptionsFlow):
+    """Handle options flow for Kia/Hyundai US."""
+
     def __init__(self, config_entry: ConfigEntry) -> None:
+        """Initialize options flow."""
         self.schema = vol.Schema(
             {
                 vol.Optional(
@@ -49,8 +51,9 @@ class KiaUvoOptionFlowHandler(OptionsFlow):
         )
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
+        """Handle options flow."""
         if user_input is not None:
-            _LOGGER.debug("user input in option flow : %s", user_input)
+            _LOGGER.debug("User input in option flow: %s", user_input)
             return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(step_id="init", data_schema=self.schema)
@@ -58,175 +61,245 @@ class KiaUvoOptionFlowHandler(OptionsFlow):
 
 @config_entries.HANDLERS.register(DOMAIN)
 class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
+    """Handle config flow for Kia/Hyundai US."""
 
     VERSION = CONFIG_FLOW_VERSION
     CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
-    data: dict[str, Any] = {}
-    otp_key: str | None = None
-    api_connection: UsKia | None = None
-    last_action: dict[str, Any] | None = None
-    notify_type: str | None = None
-
+    def __init__(self):
+        """Initialize config flow."""
+        self.data: dict[str, Any] = {}
+        self.vehicle_manager: VehicleManager | None = None
+        self.otp_task: asyncio.Task | None = None
 
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):
+        """Get options flow handler."""
         return KiaUvoOptionFlowHandler(config_entry)
 
     async def async_step_reauth(self, user_input: dict[str, Any] | None = None):
+        """Handle re-authentication."""
         _LOGGER.debug(f"Reauth with input: {user_input}")
         return await self.async_step_user(user_input)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
+        """Handle user step - credentials input."""
         _LOGGER.debug(f"User step with input: {user_input}")
-        data_schema = {
+
+        data_schema = vol.Schema({
             vol.Required(CONF_USERNAME): str,
             vol.Required(CONF_PASSWORD): str,
-            vol.Required(CONF_OTP_TYPE, default="SMS"): vol.In(["EMAIL", "SMS"]),
-        }
+            vol.Required(CONF_BRAND, default="Kia"): vol.In(list(BRANDS.keys())),
+            vol.Optional(CONF_PIN, default=""): str,
+        })
         errors: dict[str, str] = {}
 
-        if user_input is not None and CONF_OTP_TYPE in user_input:
+        if user_input is not None:
             username = user_input[CONF_USERNAME]
             password = user_input[CONF_PASSWORD]
-            otp_type = user_input[CONF_OTP_TYPE]
-            async def otp_callback(context: dict[str, Any]):
-                _LOGGER.info(f"OTP callback called with stage: {context.get('stage')}")
-                if context["stage"] == "choose_destination":
-                    _LOGGER.info(f"OTP choose_destination - returning notify_type: {otp_type}")
-                    _LOGGER.debug(f"Full OTP context: {context}")
-                    return { "notify_type": otp_type }
-                if context["stage"] == "input_code":
-                    _LOGGER.info("OTP input_code stage - waiting for user to enter code")
-                    loop_counter = 0
-                    while loop_counter < 120:
-                        _LOGGER.debug(f"data: {self.data}")
-                        if CONF_OTP_CODE in self.data:
-                            _LOGGER.debug(f"OTP code: {self.data[CONF_OTP_CODE]}")
-                            return { "otp_code": self.data[CONF_OTP_CODE] }
-                        loop_counter += 1
-                        _LOGGER.debug(f"Waiting for OTP {loop_counter}")
-                        _LOGGER.debug(f"data: {self.data}")
-                        await asyncio.sleep(1)
-                    raise ConfigEntryAuthFailed("2 minute timeout waiting for OTP")
+            brand_name = user_input[CONF_BRAND]
+            brand = BRANDS.get(brand_name, BRAND_KIA)
+            pin = user_input.get(CONF_PIN, "")
+
+            # Store user input
+            self.data = {
+                CONF_USERNAME: username,
+                CONF_PASSWORD: password,
+                CONF_BRAND: brand,
+                CONF_PIN: pin,
+            }
+
+            # Create OTP handler that waits for user input
+            async def otp_handler(context: dict[str, Any]) -> dict[str, Any]:
+                """Handle OTP requests from the EU library."""
+                _LOGGER.info(f"OTP handler called with context: {context}")
+
+                # Wait for OTP code to be entered
+                loop_counter = 0
+                while loop_counter < 120:  # 2 minute timeout
+                    if CONF_OTP_CODE in self.data:
+                        otp_code = self.data[CONF_OTP_CODE]
+                        _LOGGER.info("OTP code received: %s***", otp_code[:2] if len(otp_code) > 2 else "")
+                        return {"otp": otp_code}
+                    loop_counter += 1
+                    await asyncio.sleep(1)
+
+                raise ConfigEntryAuthFailed("Timeout waiting for OTP code")
 
             try:
-                client_session = async_get_clientsession(self.hass)
-                _LOGGER.info("Creating UsKia connection...")
-                self.api_connection = UsKia(
+                _LOGGER.info("Creating VehicleManager for %s (%s)", brand_name, brand)
+                self.vehicle_manager = VehicleManager(
+                    region=REGION_USA,
+                    brand=brand,
                     username=username,
                     password=password,
-                    otp_callback=otp_callback,
-                    client_session=client_session,
+                    pin=pin,
+                    otp_handler=otp_handler,
                 )
-                _LOGGER.info(f"UsKia created with device_id: {self.api_connection.device_id}")
-                
-                # Patch the API headers with working iOS headers
-                _LOGGER.info("Patching API headers...")
-                patch_api_headers(self.api_connection)
-                _LOGGER.info("Headers patched successfully")
-                
-                self.data.update(user_input)
-                _LOGGER.info("Starting login task...")
-                self.otp_task = self.hass.loop.create_task(self.api_connection.login())
-                _LOGGER.info("Login task started, proceeding to OTP code step")
+
+                # Start initialization in background - this will trigger OTP
+                _LOGGER.info("Starting VehicleManager initialization (may trigger OTP)...")
+                self.otp_task = self.hass.loop.create_task(
+                    self._initialize_and_get_vehicles()
+                )
+
+                # Proceed to OTP code step
                 return await self.async_step_otp_code()
+
+            except Exception as e:
+                _LOGGER.exception(f"Error during login setup: {e}")
+                errors["base"] = "auth"
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=data_schema,
+            errors=errors,
+        )
+
+    async def _initialize_and_get_vehicles(self):
+        """Initialize VehicleManager and fetch vehicles."""
+        if self.vehicle_manager is None:
+            raise ConfigEntryAuthFailed("VehicleManager not created")
+
+        _LOGGER.info("Checking/refreshing token...")
+        await self.vehicle_manager.check_and_refresh_token()
+
+        _LOGGER.info("Initializing vehicles...")
+        await self.vehicle_manager.initialize()
+
+        _LOGGER.info(
+            "Found %d vehicles",
+            len(self.vehicle_manager.vehicles) if self.vehicle_manager.vehicles else 0
+        )
+
+    async def async_step_otp_code(self, user_input: dict[str, Any] | None = None):
+        """Handle OTP code entry."""
+        _LOGGER.debug(f"OTP code step with input: {user_input}")
+
+        data_schema = vol.Schema({
+            vol.Required(CONF_OTP_CODE): str,
+        })
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            # Store OTP code for the handler
+            self.data[CONF_OTP_CODE] = user_input[CONF_OTP_CODE]
+
+            try:
+                # Wait for the initialization task to complete
+                _LOGGER.info("Waiting for VehicleManager initialization to complete...")
+                await asyncio.wait_for(self.otp_task, timeout=180)
+
+                if self.vehicle_manager is None or not self.vehicle_manager.vehicles:
+                    _LOGGER.error("No vehicles found after initialization")
+                    errors["base"] = "no_vehicles"
+                else:
+                    # Build vehicles list for the next step
+                    vehicles = []
+                    for vid, vehicle in self.vehicle_manager.vehicles.items():
+                        _LOGGER.info(
+                            "Discovered vehicle: id=%s, name=%s, model=%s",
+                            vid, vehicle.name, vehicle.model
+                        )
+                        vehicles.append({
+                            "vehicleIdentifier": vid,
+                            "nickName": vehicle.name,
+                            "modelName": vehicle.model,
+                        })
+
+                    self.data[CONFIG_FLOW_TEMP_VEHICLES] = vehicles
+                    return await self.async_step_pick_vehicle()
+
+            except asyncio.TimeoutError:
+                _LOGGER.error("Timeout waiting for initialization")
+                errors["base"] = "timeout"
             except ConfigEntryAuthFailed as e:
-                _LOGGER.error(f"ConfigEntryAuthFailed: {e}")
+                _LOGGER.error(f"Auth failed: {e}")
                 errors["base"] = "auth"
             except Exception as e:
-                _LOGGER.exception(f"Unexpected error during login setup: {e}")
+                _LOGGER.exception(f"Error during OTP verification: {e}")
                 errors["base"] = "auth"
 
         return self.async_show_form(
-            step_id="user", data_schema=vol.Schema(data_schema), errors=errors
+            step_id="otp_code",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders={
+                "message": "Enter the OTP code sent to your phone or email"
+            },
         )
 
-    async def async_step_otp_code(
-        self, user_input: dict[str, Any] | None = None
-    ):
-        _LOGGER.debug(f"OTP code step with input: {user_input}")
-        data_schema = {
-            vol.Required(CONF_OTP_CODE): str,
-        }
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            self.data.update(user_input)
-            try:
-                await self.otp_task
-            except DataError:
-                raise ConfigEntryAuthFailed("Invalid OTP code")
-            if self.api_connection is None:
-                raise ConfigEntryAuthFailed("API connection not established")
-            await self.api_connection.get_vehicles()
-            self.data[CONFIG_FLOW_TEMP_VEHICLES] = self.api_connection.vehicles
-            return await self.async_step_pick_vehicle()
-        return self.async_show_form(
-            step_id="otp_code", data_schema=vol.Schema(data_schema), errors=errors
-        )
-
-
-    async def async_step_pick_vehicle(
-        self, user_input: dict[str, Any] | None = None
-    ):
+    async def async_step_pick_vehicle(self, user_input: dict[str, Any] | None = None):
         """Add ALL vehicles at once - no picking needed."""
-        _LOGGER.debug(f"Adding all vehicles automatically")
-        
-        if self.api_connection is None:
-            raise ConfigEntryAuthFailed("API connection not established")
-        
-        vehicles = self.data[CONFIG_FLOW_TEMP_VEHICLES]
-        del self.data[CONFIG_FLOW_TEMP_VEHICLES]
-        
+        _LOGGER.debug("Adding all vehicles automatically")
+
+        if self.vehicle_manager is None:
+            raise ConfigEntryAuthFailed("VehicleManager not established")
+
+        vehicles = self.data.get(CONFIG_FLOW_TEMP_VEHICLES, [])
+        if CONFIG_FLOW_TEMP_VEHICLES in self.data:
+            del self.data[CONFIG_FLOW_TEMP_VEHICLES]
+
+        _LOGGER.info("Processing %d vehicles for setup", len(vehicles))
+
         # Handle reauth - just update the one entry
         if self.source == SOURCE_REAUTH:
             reauth_entry = self._get_reauth_entry()
             vehicle_id = reauth_entry.data.get(CONF_VEHICLE_ID)
-            self.data[CONF_VEHICLE_ID] = vehicle_id
-            self.data[CONF_REFRESH_TOKEN] = self.api_connection.refresh_token
-            self.data[CONF_DEVICE_ID] = self.api_connection.device_id
+
+            entry_data = {
+                CONF_USERNAME: self.data[CONF_USERNAME],
+                CONF_PASSWORD: self.data[CONF_PASSWORD],
+                CONF_VEHICLE_ID: vehicle_id,
+                CONF_BRAND: self.data[CONF_BRAND],
+                CONF_PIN: self.data.get(CONF_PIN, ""),
+            }
+
             await self.async_set_unique_id(vehicle_id)
             self._abort_if_unique_id_mismatch()
+
             return self.async_update_reload_and_abort(
                 reauth_entry,
-                data_updates=self.data,
+                data_updates=entry_data,
             )
-        
+
         # For new setup: add ALL vehicles
         created_entries = []
         for vehicle in vehicles:
             vehicle_id = vehicle["vehicleIdentifier"]
             vehicle_name = f"{vehicle['nickName']} ({vehicle['modelName']})"
-            
+
+            _LOGGER.info("Preparing to add vehicle: %s (%s)", vehicle_name, vehicle_id)
+
             # Check if this vehicle is already configured
             existing_entry = await self.async_set_unique_id(vehicle_id)
             if existing_entry:
-                _LOGGER.debug(f"Vehicle {vehicle_name} already configured, skipping")
+                _LOGGER.info("Vehicle %s already configured, skipping", vehicle_name)
                 continue
-            
+
             # Create entry data for this vehicle
             entry_data = {
                 CONF_USERNAME: self.data[CONF_USERNAME],
                 CONF_PASSWORD: self.data[CONF_PASSWORD],
                 CONF_VEHICLE_ID: vehicle_id,
-                CONF_REFRESH_TOKEN: self.api_connection.refresh_token,
-                CONF_DEVICE_ID: self.api_connection.device_id,
+                CONF_BRAND: self.data[CONF_BRAND],
+                CONF_PIN: self.data.get(CONF_PIN, ""),
             }
-            if CONF_OTP_TYPE in self.data:
-                entry_data[CONF_OTP_TYPE] = self.data[CONF_OTP_TYPE]
-            
+
             created_entries.append((vehicle_name, entry_data))
-        
+
         if not created_entries:
             return self.async_abort(reason="already_configured")
-        
+
+        _LOGGER.info("Creating entries for %d new vehicles", len(created_entries))
+
         # Create first entry via flow return (required by HA)
         first_name, first_data = created_entries[0]
-        
-        # Schedule additional entries via import flows (import is a valid HA source)
+
+        # Schedule additional entries via import flows
         for vehicle_name, entry_data in created_entries[1:]:
-            _LOGGER.info(f"Scheduling auto-add for vehicle: {vehicle_name}")
+            _LOGGER.info("Scheduling auto-add for vehicle: %s", vehicle_name)
             self.hass.async_create_task(
                 self.hass.config_entries.flow.async_init(
                     DOMAIN,
@@ -234,22 +307,22 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                     data={"title": vehicle_name, **entry_data},
                 )
             )
-        
+
         return self.async_create_entry(title=first_name, data=first_data)
-    
+
     async def async_step_import(self, import_data: dict[str, Any]):
         """Handle import of additional vehicles."""
-        title = import_data.get("title", "Kia Vehicle")
+        title = import_data.get("title", "Kia/Hyundai Vehicle")
         vehicle_id = import_data.get(CONF_VEHICLE_ID)
-        
+
         if not vehicle_id:
             return self.async_abort(reason="unknown")
-        
+
         await self.async_set_unique_id(vehicle_id)
         self._abort_if_unique_id_configured()
-        
+
         # Remove title from data before saving (it's not a config field)
         entry_data = {k: v for k, v in import_data.items() if k != "title"}
-        
-        _LOGGER.info(f"Import creating entry: {title}")
+
+        _LOGGER.info("Import creating entry: %s", title)
         return self.async_create_entry(title=title, data=entry_data)
