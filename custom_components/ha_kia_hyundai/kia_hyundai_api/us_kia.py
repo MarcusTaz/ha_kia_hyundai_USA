@@ -142,44 +142,9 @@ class UsKia:
         return self._ssl_context
 
     def _api_headers(self, vehicle_key: str | None = None) -> dict:
-        """Generate API headers matching the original Android app.
+        """Generate API headers matching the current Kia iOS app.
         
-        Used for vehicle status and other non-OTP requests.
-        """
-        headers = {
-            "content-type": "application/json;charset=UTF-8",
-            "accept": "application/json, text/plain, */*",
-            "accept-encoding": "gzip, deflate, br",
-            "accept-language": "en-US,en;q=0.9",
-            "apptype": "L",
-            "appversion": "7.12.1",
-            "clientid": "MWAMOBILE",
-            "from": "SPA",
-            "host": API_URL_HOST,
-            "language": "0",
-            "offset": str(int(time.localtime().tm_gmtoff / 60 / 60)),
-            "ostype": "Android",
-            "osversion": "11",
-            "secretkey": "98er-w34rf-ibf3-3f6h",
-            "to": "APIGW",
-            "tokentype": "G",
-            "user-agent": "okhttp/4.10.0",
-            "deviceid": self.device_id,
-            "date": datetime.now(tz=pytz.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"),
-        }
-        if self.session_id is not None:
-            headers["sid"] = self.session_id
-        if self.refresh_token is not None:
-            headers["rmtoken"] = self.refresh_token
-        if vehicle_key is not None:
-            headers["vinkey"] = vehicle_key
-        return headers
-    
-    def _ios_headers(self) -> dict:
-        """Generate iOS headers for OTP authentication.
-        
-        The iOS headers are required for OTP to work properly.
-        Android headers don't work for OTP authentication.
+        Uses iOS headers which work for both OTP and vehicle status.
         """
         offset = int(time.localtime().tm_gmtoff / 60 / 60)
         headers = {
@@ -207,14 +172,13 @@ class UsKia:
             headers["sid"] = self.session_id
         if self.refresh_token is not None:
             headers["rmtoken"] = self.refresh_token
+        if vehicle_key is not None:
+            headers["vinkey"] = vehicle_key
         return headers
     
     def _otp_headers(self) -> dict:
-        """Generate headers specifically for OTP requests.
-        
-        Uses iOS headers as base since OTP requires iOS-style authentication.
-        """
-        headers = self._ios_headers()
+        """Generate headers specifically for OTP requests."""
+        headers = self._api_headers()
         if self.otp_key is not None:
             headers["otpkey"] = self.otp_key
         if self.notify_type is not None:
@@ -487,24 +451,25 @@ class UsKia:
         url = API_URL_BASE + "cmm/gvi"
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
         _LOGGER.debug("Getting cached status for vehicle_id=%s, vehicle_key=%s", vehicle_id, vehicle_key)
+        # Payload format matching EU library (hyundai-kia-connect-api)
         body = {
             "vehicleConfigReq": {
                 "airTempRange": "0",
                 "maintenance": "1",
-                "seatHeatCoolOption": "1",
+                "seatHeatCoolOption": "0",  # EU library uses 0
                 "vehicle": "1",
-                "vehicleFeature": "1",
+                "vehicleFeature": "0",  # EU library uses 0
             },
             "vehicleInfoReq": {
                 "drivingActivty": "0",
-                "dtc": "0",
+                "dtc": "1",  # EU library uses 1
                 "enrollment": "1",
                 "functionalCards": "0",
                 "location": "1",
                 "vehicleStatus": "1",
                 "weather": "0",
             },
-            "vinKey": [vehicle_key],  # Must be a list
+            "vinKey": [vehicle_key],
         }
         response = await self._post_request_with_logging_and_errors_raised(
             vehicle_key=vehicle_key,
