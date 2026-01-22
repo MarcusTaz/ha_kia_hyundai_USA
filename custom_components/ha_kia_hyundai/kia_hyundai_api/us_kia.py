@@ -560,11 +560,6 @@ class UsKia:
             raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
         url = API_URL_BASE + "rems/start"
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
-        
-        # Determine steering wheel value: use explicit setting or fall back to heating bool
-        # steeringWheel accepts: 0=off, 1=low/on, 2=high
-        steering_wheel_value = steering_wheel_heat if steering_wheel_heat > 0 else int(heating)
-        
         body = {
             "remoteClimate": {
                 "airCtrl": climate,
@@ -576,7 +571,8 @@ class UsKia:
                 "heatingAccessory": {
                     "rearWindow": int(heating),
                     "sideMirror": int(heating),
-                    "steeringWheel": steering_wheel_value,
+                    "steeringWheel": 1 if steering_wheel_heat > 0 else int(heating),
+                    "steeringWheelStep": steering_wheel_heat,  # 0=off, 1=low, 2=high
                 },
                 "ignitionOnDuration": {
                     "unit": 4,
@@ -584,7 +580,6 @@ class UsKia:
                 },
             }
         }
-        _LOGGER.debug("Heating accessory payload: %s", body["remoteClimate"]["heatingAccessory"])
         # Always include seat settings if any are provided OR if they have non-None/non-NONE values
         has_seat_settings = any([
             driver_seat is not None and driver_seat != SeatSettings.NONE,

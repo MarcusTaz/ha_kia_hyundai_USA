@@ -45,6 +45,7 @@ class VehicleCoordinator(DataUpdateCoordinator):
     desired_passenger_seat_comfort: SeatSettings | None = None
     desired_left_rear_seat_comfort: SeatSettings | None = None
     desired_right_rear_seat_comfort: SeatSettings | None = None
+    desired_steering_wheel_heat: int = 0  # 0=off, 1=low/on, 2=high (UI preference only for now)
 
     def __init__(
         self,
@@ -582,3 +583,32 @@ class VehicleCoordinator(DataUpdateCoordinator):
         if seat_data:
             return tuple(seat_data.values())
         return (0, 1)  # Default: off
+
+    @property
+    def steering_wheel_heat_supported(self) -> bool:
+        """Return true if heated steering wheel is supported."""
+        return safely_get_json_value(
+            self.data,
+            "vehicleConfig.vehicleFeature.remoteFeature.heatedSteeringWheel",
+            bool,
+        )
+
+    @property
+    def steering_wheel_heat_step_level(self) -> int:
+        """Return steering wheel heat step level (1=on/off, 2=off/low/high)."""
+        level = safely_get_json_value(
+            self.data,
+            "vehicleConfig.vehicleFeature.remoteFeature.steeringWheelStepLevel",
+            int,
+        )
+        # Default to 2 (off/low/high) if not specified but steering wheel is supported
+        return level if level else 2
+
+    @property
+    def climate_steering_wheel(self) -> int:
+        """Return current steering wheel heat level (0=off, 1=low/on, 2=high)."""
+        return safely_get_json_value(
+            self.data,
+            "lastVehicleInfo.vehicleStatusRpt.vehicleStatus.climate.heatingAccessory.steeringWheel",
+            int,
+        ) or 0
