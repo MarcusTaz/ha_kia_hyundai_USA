@@ -139,22 +139,22 @@ SEAT_SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
     KiaSensorEntityDescription(
         key="climate_driver_seat",
         name="Seat-Driver",
-        exists_fn=lambda seat: bool(seat.front_seat_options.get(HEAT_VENT_TYPE, 0)),
+        exists_fn=lambda seat: True,  # Existence checked by has_climate_seats
     ),
     KiaSensorEntityDescription(
         key="climate_passenger_seat",
         name="Seat-Passenger",
-        exists_fn=lambda seat: bool(seat.front_seat_options.get(HEAT_VENT_TYPE, 0)),
+        exists_fn=lambda seat: True,  # Existence checked by has_climate_seats
     ),
     KiaSensorEntityDescription(
         key="climate_left_rear_seat",
         name="Seat-Left Rear",
-        exists_fn=lambda seat: bool(seat.rear_seat_options.get(HEAT_VENT_TYPE, 0)),
+        exists_fn=lambda seat: bool(seat.rear_seat_options.get(HEAT_VENT_TYPE, 0)),  # Rear may not exist
     ),
     KiaSensorEntityDescription(
         key="climate_right_rear_seat",
         name="Seat-Right Rear",
-        exists_fn=lambda seat: bool(seat.rear_seat_options.get(HEAT_VENT_TYPE, 0)),
+        exists_fn=lambda seat: bool(seat.rear_seat_options.get(HEAT_VENT_TYPE, 0)),  # Rear may not exist
     ),
 )
 
