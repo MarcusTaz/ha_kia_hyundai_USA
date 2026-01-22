@@ -543,6 +543,7 @@ class UsKia:
             defrost: bool,
             climate: bool,
             heating: bool,
+            steering_wheel_heat: int = 0,
             driver_seat: SeatSettings | None = None,
             passenger_seat: SeatSettings | None = None,
             left_rear_seat: SeatSettings | None = None,
@@ -550,9 +551,9 @@ class UsKia:
     ):
         _LOGGER.info("===== US_KIA START_CLIMATE CALLED =====")
         _LOGGER.info(
-            "start_climate params: temp=%s, defrost=%s, climate=%s, heating=%s, "
+            "start_climate params: temp=%s, defrost=%s, climate=%s, heating=%s, steering_wheel=%s, "
             "driver_seat=%s, passenger_seat=%s, left_rear=%s, right_rear=%s",
-            set_temp, defrost, climate, heating,
+            set_temp, defrost, climate, heating, steering_wheel_heat,
             driver_seat, passenger_seat, left_rear_seat, right_rear_seat
         )
         if await self.check_last_action_finished(vehicle_id=vehicle_id) is False:
@@ -570,8 +571,8 @@ class UsKia:
                 "heatingAccessory": {
                     "rearWindow": int(heating),
                     "sideMirror": int(heating),
-                    "steeringWheel": int(heating),
-                    "steeringWheelStep": 0,  # EU library pattern: 0=off, 1=low, 2=high
+                    "steeringWheel": 1 if steering_wheel_heat > 0 else int(heating),
+                    "steeringWheelStep": steering_wheel_heat,  # 0=off, 1=low, 2=high
                 },
                 "ignitionOnDuration": {
                     "unit": 4,
