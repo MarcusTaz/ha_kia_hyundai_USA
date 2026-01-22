@@ -118,7 +118,7 @@ The embedded API code lives in `custom_components/ha_kia_hyundai/kia_hyundai_api
 
 - **Original Author**: [Bren Dahl (@dahlb)](https://github.com/dahlb)
 - **OTP Fix**: mmase
-- **Community Maintainer**: MarcusTaz
+- **Fork Maintainer & Developer**: [MarcusTaz](https://github.com/MarcusTaz) - Revived the abandoned US integration, implemented EU API fixes, added steering wheel heat control, seat climate controls, and ongoing development
 
 ## Contributing
 
