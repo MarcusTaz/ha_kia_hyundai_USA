@@ -469,33 +469,43 @@ class VehicleCoordinator(DataUpdateCoordinator):
     @property
     def has_climate_seats(self) -> bool:
         """Return true if heated or cooled seats installed."""
-        return safely_get_json_value(
+        heated = safely_get_json_value(
             self.data,
             "vehicleConfig.vehicleFeature.remoteFeature.heatedSeat",
             bool,
-        ) or safely_get_json_value(
+        )
+        vented = safely_get_json_value(
             self.data,
             "vehicleConfig.vehicleFeature.remoteFeature.ventSeat",
             bool,
         )
+        _LOGGER.debug(
+            "Vehicle %s has_climate_seats: heatedSeat=%s, ventSeat=%s, result=%s",
+            self.vehicle_name, heated, vented, bool(heated or vented)
+        )
+        return bool(heated or vented)
 
     @property
     def front_seat_options(self) -> dict:
         """Return front seat options."""
-        return safely_get_json_value(
+        options = safely_get_json_value(
             self.data,
             "vehicleConfig.heatVentSeat.driverSeat",
             dict,
         ) or {}
+        _LOGGER.debug("Vehicle %s front_seat_options: %s", self.vehicle_name, options)
+        return options
 
     @property
     def rear_seat_options(self) -> dict:
         """Return rear seat options."""
-        return safely_get_json_value(
+        options = safely_get_json_value(
             self.data,
             "vehicleConfig.heatVentSeat.rearLeftSeat",
             dict,
         ) or {}
+        _LOGGER.debug("Vehicle %s rear_seat_options: %s", self.vehicle_name, options)
+        return options
 
     @property
     def climate_driver_seat(self) -> tuple:
