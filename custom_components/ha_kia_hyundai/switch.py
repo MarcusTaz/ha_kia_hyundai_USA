@@ -41,7 +41,7 @@ class ClimateDesiredDefrostSwitch(VehicleCoordinatorBaseEntity, SwitchEntity, Re
     ):
         super().__init__(coordinator, SwitchEntityDescription(
             key="climate_desired_defrost",
-            name="Climate Desired Defrost",
+            name="Front Defrost with Climate",
             icon="mdi:car-defrost-front",
             device_class=SwitchDeviceClass.SWITCH,
         ))
@@ -79,8 +79,8 @@ class ClimateDesiredHeatingAccSwitch(VehicleCoordinatorBaseEntity, SwitchEntity,
     ):
         super().__init__(coordinator, SwitchEntityDescription(
             key="climate_desired_heating_acc",
-            name="Climate Desired Heating Acc",
-            icon="mdi:steering",
+            name="Rear Defrost with Climate",
+            icon="mdi:car-defrost-rear",
             device_class=SwitchDeviceClass.SWITCH,
         ))
 
