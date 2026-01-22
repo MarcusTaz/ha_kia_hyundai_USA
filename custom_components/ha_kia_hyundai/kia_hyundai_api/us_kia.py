@@ -562,6 +562,7 @@ class UsKia:
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
         
         # Determine steering wheel value: use explicit setting or fall back to heating bool
+        # steeringWheel accepts: 0=off, 1=low/on, 2=high
         steering_wheel_value = steering_wheel_heat if steering_wheel_heat > 0 else int(heating)
         
         body = {
@@ -576,7 +577,6 @@ class UsKia:
                     "rearWindow": int(heating),
                     "sideMirror": int(heating),
                     "steeringWheel": steering_wheel_value,
-                    "steeringWheelStep": steering_wheel_heat,  # Step level (0=off, 1=low, 2=high)
                 },
                 "ignitionOnDuration": {
                     "unit": 4,
