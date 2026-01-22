@@ -567,8 +567,9 @@ class UsKia:
             left_rear_seat: SeatSettings | None = None,
             right_rear_seat: SeatSettings | None = None,
     ):
-        _LOGGER.debug(
-            "start_climate called: temp=%s, defrost=%s, climate=%s, heating=%s, "
+        _LOGGER.info("===== US_KIA START_CLIMATE CALLED =====")
+        _LOGGER.info(
+            "start_climate params: temp=%s, defrost=%s, climate=%s, heating=%s, "
             "driver_seat=%s, passenger_seat=%s, left_rear=%s, right_rear=%s",
             set_temp, defrost, climate, heating,
             driver_seat, passenger_seat, left_rear_seat, right_rear_seat

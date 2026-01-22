@@ -1,5 +1,6 @@
 """Select entity for seats."""
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final
@@ -14,6 +15,8 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from . import VehicleCoordinator, get_all_coordinators
 from .const import DOMAIN, SEAT_STATUS, STR_TO_SEAT_SETTING
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
+
+_LOGGER = logging.getLogger(__name__)
 
 OFF = ["Off"]
 HEAT_OPTIONS = {
@@ -123,11 +126,21 @@ class SeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
 
     async def async_select_option(self, option: str) -> None:
         """Change the select option."""
+        _LOGGER.info(
+            "SEAT SELECT: Setting %s to %s (SeatSettings=%s) on coordinator for %s",
+            self.entity_description.key,
+            option,
+            STR_TO_SEAT_SETTING.get(option),
+            self.coordinator.vehicle_name,
+        )
         setattr(
             self.coordinator,
             self.entity_description.key,
             STR_TO_SEAT_SETTING[option],
         )
+        # Verify it was set
+        new_value = getattr(self.coordinator, self.entity_description.key, "NOT FOUND")
+        _LOGGER.info("SEAT SELECT: Verified value is now: %s", new_value)
         self._attr_current_option = option
         self.async_write_ha_state()
 
