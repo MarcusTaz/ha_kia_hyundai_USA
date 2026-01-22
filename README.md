@@ -109,10 +109,10 @@ Rather than depending on the abandoned PyPI package, we **embedded the API code 
 
 We studied the **[Hyundai-Kia-Connect/hyundai-kia-connect-api](https://github.com/Hyundai-Kia-Connect/hyundai_kia_connect_api)** (EU) library which had working implementations and applied their approaches to fix the USA API:
 
-- **Fixed OTP authentication** - Adopted EU library's iOS header approach for reliable login
-- **Fixed rate limiting** - No more 2-vehicle limit per session
-- **Steering wheel heat control** - Discovered correct `steeringWheelStep` API format from EU library
-- **Seat climate controls** - Proper `heatVentSeat` payload structure
+- **Fixed OTP authentication** - Reliable SMS/Email verification
+- **Fixed rate limiting** - All vehicles discovered in single session
+- **Steering wheel heat control** - Full Off/Low/High support
+- **Seat climate controls** - Heat and ventilation working
 - **Active maintenance** - Ongoing bug fixes and community-driven development
 
 The embedded API code lives in `custom_components/ha_kia_hyundai/kia_hyundai_api/`.
