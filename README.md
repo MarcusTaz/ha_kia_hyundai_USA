@@ -84,10 +84,6 @@ The integration fully supports multiple vehicles per account. All vehicles linke
 - Check spam folder for email OTP
 - Codes expire after a few minutes
 
-**"Please try again later" errors?**
-- Kia API rate limit reached - wait 24 hours
-- Avoid rapid repeated login attempts
-
 **Vehicle not appearing?**
 - Verify vehicle works in official Kia Connect app
 - Older infotainment systems may not be compatible
