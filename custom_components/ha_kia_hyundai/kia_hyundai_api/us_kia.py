@@ -567,6 +567,12 @@ class UsKia:
             left_rear_seat: SeatSettings | None = None,
             right_rear_seat: SeatSettings | None = None,
     ):
+        _LOGGER.debug(
+            "start_climate called: temp=%s, defrost=%s, climate=%s, heating=%s, "
+            "driver_seat=%s, passenger_seat=%s, left_rear=%s, right_rear=%s",
+            set_temp, defrost, climate, heating,
+            driver_seat, passenger_seat, left_rear_seat, right_rear_seat
+        )
         if await self.check_last_action_finished(vehicle_id=vehicle_id) is False:
             raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
         url = API_URL_BASE + "rems/start"
@@ -590,18 +596,23 @@ class UsKia:
                 },
             }
         }
-        if (
-            driver_seat is not None
-            or passenger_seat is not None
-            or left_rear_seat is not None
-            or right_rear_seat is not None
-        ):
+        # Always include seat settings if any are provided OR if they have non-None/non-NONE values
+        has_seat_settings = any([
+            driver_seat is not None and driver_seat != SeatSettings.NONE,
+            passenger_seat is not None and passenger_seat != SeatSettings.NONE,
+            left_rear_seat is not None and left_rear_seat != SeatSettings.NONE,
+            right_rear_seat is not None and right_rear_seat != SeatSettings.NONE,
+        ])
+        _LOGGER.debug("has_seat_settings=%s", has_seat_settings)
+        
+        if has_seat_settings:
             body["remoteClimate"]["heatVentSeat"] = {
                 "driverSeat": _seat_settings(driver_seat),
                 "passengerSeat": _seat_settings(passenger_seat),
                 "rearLeftSeat": _seat_settings(left_rear_seat),
                 "rearRightSeat": _seat_settings(right_rear_seat),
-                }
+            }
+            _LOGGER.debug("Seat settings payload: %s", body["remoteClimate"]["heatVentSeat"])
         response = await self._post_request_with_logging_and_errors_raised(
             vehicle_key=vehicle_key,
             url=url,

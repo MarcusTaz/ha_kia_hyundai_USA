@@ -83,6 +83,13 @@ class Thermostat(VehicleCoordinatorBaseEntity, ClimateEntity):
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Update hvac mode."""
         _LOGGER.debug(f"set_hvac_mode; hvac_mode:{hvac_mode}")
+        _LOGGER.debug(
+            "Coordinator seat settings: driver=%s, passenger=%s, left_rear=%s, right_rear=%s",
+            self.coordinator.desired_driver_seat_comfort,
+            self.coordinator.desired_passenger_seat_comfort,
+            self.coordinator.desired_left_rear_seat_comfort,
+            self.coordinator.desired_right_rear_seat_comfort,
+        )
         match hvac_mode.strip().lower():
             case HVACMode.OFF:
                 await self.coordinator.api_connection.stop_climate(vehicle_id=self.coordinator.vehicle_id)
