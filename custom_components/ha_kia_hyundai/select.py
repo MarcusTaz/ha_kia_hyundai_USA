@@ -1,4 +1,4 @@
-"""Select entity for seats."""
+"""Select entity for seats and steering wheel."""
 
 import logging
 from collections.abc import Callable
@@ -18,20 +18,11 @@ from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 _LOGGER = logging.getLogger(__name__)
 
-OFF = ["Off"]
-HEAT_OPTIONS = {
-    3: ["High Heat", "Medium Heat", "Low Heat"],
-    2: ["High Heat", "Low Heat"],
-}
-COOL_OPTIONS = {
-    3: ["High Cool", "Medium Cool", "Low Cool"],
-    2: ["High Cool", "Low Cool"],
-}
-
-# Steering wheel heat options based on step level
+# Steering wheel options based on step level from vehicle config
+# steeringWheelStepLevel: 1 = on/off only, 2 = off/low/high
 STEERING_WHEEL_OPTIONS = {
-    1: ["Off", "On"],  # Single level
-    2: ["Off", "Low", "High"],  # Two levels
+    1: ["Off", "On"],
+    2: ["Off", "Low", "High"],
 }
 
 # Map steering wheel option strings to API values
@@ -40,6 +31,16 @@ STEERING_WHEEL_STR_TO_VALUE = {
     "On": 1,
     "Low": 1,
     "High": 2,
+}
+
+OFF = ["Off"]
+HEAT_OPTIONS = {
+    3: ["High Heat", "Medium Heat", "Low Heat"],
+    2: ["High Heat", "Low Heat"],
+}
+COOL_OPTIONS = {
+    3: ["High Cool", "Medium Cool", "Low Cool"],
+    2: ["High Cool", "Low Cool"],
 }
 
 HEAT_TYPE = "heatVentType"
@@ -96,20 +97,17 @@ async def async_setup_entry(
     """Set up the entity."""
     coordinators = get_all_coordinators(hass)
 
-    entities: list[SelectEntity] = []
+    entities = []
     for coordinator in coordinators.values():
-        # Add seat climate selects
+        # Add seat selects
         entities.extend(
             SeatSelect(coordinator, select_description)
             for select_description in SEAT_SELECTIONS
             if coordinator.has_climate_seats
             if select_description.exists_fn(coordinator)
         )
-        
-        # Add steering wheel heat select
-        if coordinator.has_heated_steering_wheel:
-            _LOGGER.debug("Adding steering wheel heat select for %s (step_level=%s)", 
-                         coordinator.vehicle_name, coordinator.steering_wheel_heat_step_level)
+        # Add steering wheel heat select if supported
+        if coordinator.steering_wheel_heat_supported:
             entities.append(SteeringWheelHeatSelect(coordinator))
     
     async_add_entities(entities)
@@ -187,7 +185,12 @@ class SeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
 
 
 class SteeringWheelHeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
-    """Select entity for steering wheel heat."""
+    """Select entity for steering wheel heat level.
+    
+    Note: The API currently only supports on/off (0/1) for steeringWheel.
+    This UI allows selecting the desired level, but until the correct API
+    format is determined, the actual command will use the heating toggle.
+    """
 
     def __init__(self, coordinator: VehicleCoordinator):
         """Initialize steering wheel heat select."""
@@ -208,8 +211,13 @@ class SteeringWheelHeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, Restor
         """Return the current option."""
         return self._attr_current_option
 
+    @property
+    def available(self) -> bool:
+        """Return if the selector is available."""
+        return super().available
+
     async def async_select_option(self, option: str) -> None:
-        """Change the selected option."""
+        """Change the select option."""
         _LOGGER.info(
             "STEERING WHEEL: Setting to %s (value=%s) on coordinator for %s",
             option,
@@ -231,15 +239,14 @@ class SteeringWheelHeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, Restor
         ):
             self._attr_current_option = previous_state.state
         else:
-            # Get current value from vehicle status
-            current_step = self.coordinator.climate_steering_wheel_step
-            if current_step == 0:
-                self._attr_current_option = "Off"
-            elif current_step == 1:
-                step_level = self.coordinator.steering_wheel_heat_step_level
-                self._attr_current_option = "Low" if step_level == 2 else "On"
-            else:
+            # Default based on current steering wheel status
+            current_value = self.coordinator.climate_steering_wheel
+            if current_value == 2:
                 self._attr_current_option = "High"
+            elif current_value == 1:
+                self._attr_current_option = "Low" if self.coordinator.steering_wheel_heat_step_level == 2 else "On"
+            else:
+                self._attr_current_option = "Off"
 
         self.coordinator.desired_steering_wheel_heat = STEERING_WHEEL_STR_TO_VALUE.get(
             self._attr_current_option or "Off", 0
