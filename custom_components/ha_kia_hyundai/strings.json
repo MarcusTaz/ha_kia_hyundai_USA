@@ -16,6 +16,10 @@
         "data": {
           "otp_code": "OTP Code"
         }
+      },
+      "confirm_vehicles": {
+        "title": "Confirm Vehicles",
+        "description": "Found {vehicle_count} vehicle(s) in your account:\n\n{vehicle_list}\n\nClick Submit to add all vehicles to Home Assistant. You can assign areas to each vehicle after setup."
       }
     },
     "error": {
@@ -24,9 +28,10 @@
       "unknown": "Unknown error occurred."
     },
     "abort": {
-      "already_configured": "This vehicle is already configured.",
+      "already_configured": "This account is already configured.",
       "no_vehicles": "No vehicles found in your account.",
-      "unknown": "Unknown error."
+      "unknown": "Unknown error.",
+      "legacy_migration": "Legacy configuration detected. Please remove and re-add the integration."
     }
   },
   "options": {

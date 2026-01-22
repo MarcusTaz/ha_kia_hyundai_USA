@@ -1,11 +1,17 @@
 """Config flow for Kia/Hyundai US integration using fixed library.
 
+Architecture:
+- ONE config entry per Kia account (username as unique_id)
+- Multiple vehicles stored in the entry's data
+- Each vehicle becomes a separate device in Home Assistant
+
 The OTP flow:
 1. User enters credentials and selects OTP delivery method (EMAIL/SMS)
 2. Login is initiated, OTP is sent to chosen destination
 3. User enters OTP code
 4. Login completes and vehicles are discovered
-5. All vehicles are automatically added
+5. User confirms vehicles to add
+6. Single config entry created with all vehicles
 """
 
 import asyncio
@@ -35,6 +41,7 @@ from .const import (
     DOMAIN,
     CONFIG_FLOW_VERSION,
     CONF_VEHICLE_ID,
+    CONF_VEHICLES,
     DEFAULT_SCAN_INTERVAL,
     CONFIG_FLOW_TEMP_VEHICLES,
 )
@@ -119,6 +126,11 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             username = user_input[CONF_USERNAME]
             password = user_input[CONF_PASSWORD]
             otp_type = user_input[CONF_OTP_TYPE]
+
+            # Check if this account is already configured (not during reauth)
+            if self.source != SOURCE_REAUTH:
+                await self.async_set_unique_id(username.lower())
+                self._abort_if_unique_id_configured()
 
             # OTP callback that handles the two-stage flow
             async def otp_callback(context: dict[str, Any]):
@@ -213,7 +225,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                     _LOGGER.error("No vehicles found")
                     return self.async_abort(reason="no_vehicles")
 
-                # Store vehicles for next step
+                # Store discovered vehicles for confirmation step
                 self.data[CONFIG_FLOW_TEMP_VEHICLES] = self.api_connection.vehicles
                 
                 # Store tokens
@@ -225,7 +237,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                     _LOGGER.info("  - %s (%s): %s", 
                                 v.get("nickName"), v.get("modelName"), v.get("vehicleIdentifier"))
 
-                return await self.async_step_pick_vehicle()
+                return await self.async_step_confirm_vehicles()
 
             except AuthError as e:
                 _LOGGER.error("Authentication failed: %s", e)
@@ -246,113 +258,117 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             },
         )
 
-    async def async_step_pick_vehicle(self, user_input: dict[str, Any] | None = None):
-        """Add ALL vehicles at once - no picking needed."""
-        _LOGGER.debug("Adding all vehicles automatically")
-
-        if self.api_connection is None:
-            raise ConfigEntryAuthFailed("API connection not established")
+    async def async_step_confirm_vehicles(self, user_input: dict[str, Any] | None = None):
+        """Show discovered vehicles and confirm setup."""
+        _LOGGER.debug("Confirm vehicles step")
 
         vehicles = self.data.get(CONFIG_FLOW_TEMP_VEHICLES, [])
         
-        # Clean up temporary data
-        self.data.pop(CONFIG_FLOW_TEMP_VEHICLES, None)
-        self.data.pop(CONF_OTP_CODE, None)
-        self.data.pop(CONF_OTP_TYPE, None)
+        # Build list of vehicle names for description
+        vehicle_list = []
+        for v in vehicles:
+            nick = v.get("nickName", "Unknown")
+            model = v.get("modelName", "")
+            year = v.get("modelYear", "")
+            vehicle_list.append(f"• {nick} ({year} {model})")
+        
+        vehicle_description = "\n".join(vehicle_list)
 
-        _LOGGER.info("Processing %d vehicles for setup", len(vehicles))
+        if user_input is not None:
+            # User confirmed - proceed to create entry
+            _LOGGER.info("User confirmed vehicles, creating config entry")
+            
+            # Handle reauth - update existing entry
+            if self.source == SOURCE_REAUTH:
+                reauth_entry = self._get_reauth_entry()
+                
+                # Build vehicle list for storage
+                vehicle_data = []
+                for v in vehicles:
+                    vehicle_data.append({
+                        "id": v.get("vehicleIdentifier"),
+                        "name": v.get("nickName", "Unknown"),
+                        "model": v.get("modelName", "Unknown"),
+                        "year": v.get("modelYear", ""),
+                        "vin": v.get("vin", ""),
+                        "key": v.get("vehicleKey", ""),
+                    })
+                
+                entry_data = {
+                    CONF_USERNAME: self.data[CONF_USERNAME],
+                    CONF_PASSWORD: self.data[CONF_PASSWORD],
+                    CONF_VEHICLES: vehicle_data,
+                    CONF_DEVICE_ID: self.data.get(CONF_DEVICE_ID),
+                    CONF_REFRESH_TOKEN: self.data.get(CONF_REFRESH_TOKEN),
+                }
 
-        # Handle reauth - just update the one entry
-        if self.source == SOURCE_REAUTH:
-            reauth_entry = self._get_reauth_entry()
-            vehicle_id = reauth_entry.data.get(CONF_VEHICLE_ID)
+                await self.async_set_unique_id(self.data[CONF_USERNAME].lower())
+                self._abort_if_unique_id_mismatch()
 
-            entry_data = {
-                CONF_USERNAME: self.data[CONF_USERNAME],
-                CONF_PASSWORD: self.data[CONF_PASSWORD],
-                CONF_VEHICLE_ID: vehicle_id,
-                CONF_DEVICE_ID: self.data.get(CONF_DEVICE_ID),
-                CONF_REFRESH_TOKEN: self.data.get(CONF_REFRESH_TOKEN),
-            }
-
-            await self.async_set_unique_id(vehicle_id)
-            self._abort_if_unique_id_mismatch()
-
-            return self.async_update_reload_and_abort(
-                reauth_entry,
-                data_updates=entry_data,
-            )
-
-        # For new setup: add ALL vehicles
-        created_entries = []
-        for vehicle in vehicles:
-            vehicle_id = vehicle["vehicleIdentifier"]
-            vehicle_name = f"{vehicle['nickName']} ({vehicle['modelName']})"
-
-            _LOGGER.info("Checking vehicle: %s (%s)", vehicle_name, vehicle_id)
-
-            # Check if already configured
-            existing_ids = self._async_current_ids()
-            if vehicle_id in existing_ids:
-                _LOGGER.info("Vehicle %s already configured, skipping", vehicle_name)
-                continue
-
-            # Create entry data
-            entry_data = {
-                CONF_USERNAME: self.data[CONF_USERNAME],
-                CONF_PASSWORD: self.data[CONF_PASSWORD],
-                CONF_VEHICLE_ID: vehicle_id,
-                CONF_DEVICE_ID: self.data.get(CONF_DEVICE_ID),
-                CONF_REFRESH_TOKEN: self.data.get(CONF_REFRESH_TOKEN),
-            }
-
-            created_entries.append((vehicle_id, vehicle_name, entry_data))
-
-        if not created_entries:
-            _LOGGER.info("All vehicles already configured")
-            return self.async_abort(reason="already_configured")
-
-        _LOGGER.info("Creating entries for %d new vehicles", len(created_entries))
-
-        # Create first entry via flow return
-        first_id, first_name, first_data = created_entries[0]
-        await self.async_set_unique_id(first_id)
-        self._abort_if_unique_id_configured()
-
-        # Schedule additional entries via import flows
-        for vehicle_id, vehicle_name, entry_data in created_entries[1:]:
-            _LOGGER.info("Scheduling import for: %s", vehicle_name)
-            self.hass.async_create_task(
-                self.hass.config_entries.flow.async_init(
-                    DOMAIN,
-                    context={"source": "import"},
-                    data={"title": vehicle_name, **entry_data},
+                return self.async_update_reload_and_abort(
+                    reauth_entry,
+                    data_updates=entry_data,
                 )
+
+            # For new setup: create single entry for account with all vehicles
+            # Clean up temporary data
+            self.data.pop(CONFIG_FLOW_TEMP_VEHICLES, None)
+            self.data.pop(CONF_OTP_CODE, None)
+            self.data.pop(CONF_OTP_TYPE, None)
+
+            # Build vehicle list for storage (minimal info needed)
+            vehicle_data = []
+            for v in vehicles:
+                vehicle_data.append({
+                    "id": v.get("vehicleIdentifier"),
+                    "name": v.get("nickName", "Unknown"),
+                    "model": v.get("modelName", "Unknown"),
+                    "year": v.get("modelYear", ""),
+                    "vin": v.get("vin", ""),
+                    "key": v.get("vehicleKey", ""),
+                })
+            
+            entry_data = {
+                CONF_USERNAME: self.data[CONF_USERNAME],
+                CONF_PASSWORD: self.data[CONF_PASSWORD],
+                CONF_VEHICLES: vehicle_data,
+                CONF_DEVICE_ID: self.data.get(CONF_DEVICE_ID),
+                CONF_REFRESH_TOKEN: self.data.get(CONF_REFRESH_TOKEN),
+            }
+
+            # Set unique_id to username (one entry per account)
+            await self.async_set_unique_id(self.data[CONF_USERNAME].lower())
+            self._abort_if_unique_id_configured()
+
+            _LOGGER.info("Creating config entry for %s with %d vehicles", 
+                        self.data[CONF_USERNAME], len(vehicle_data))
+
+            return self.async_create_entry(
+                title=self.data[CONF_USERNAME],
+                data=entry_data,
             )
 
-        return self.async_create_entry(title=first_name, data=first_data)
+        # Show confirmation form with vehicle list
+        return self.async_show_form(
+            step_id="confirm_vehicles",
+            data_schema=vol.Schema({}),  # Empty schema - just a confirmation button
+            description_placeholders={
+                "vehicle_count": str(len(vehicles)),
+                "vehicle_list": vehicle_description,
+            },
+        )
 
     async def async_step_import(self, import_data: dict[str, Any]):
-        """Handle import of additional vehicles."""
-        title = import_data.get("title", "Kia/Hyundai Vehicle")
-        vehicle_id = import_data.get(CONF_VEHICLE_ID)
-
-        _LOGGER.info("Import step for: %s (%s)", title, vehicle_id)
-
-        if not vehicle_id:
-            _LOGGER.error("Import called without vehicle_id")
-            return self.async_abort(reason="unknown")
-
-        # Check if already configured
-        existing_ids = self._async_current_ids()
-        if vehicle_id in existing_ids:
-            _LOGGER.info("Vehicle %s already configured", vehicle_id)
-            return self.async_abort(reason="already_configured")
-
-        await self.async_set_unique_id(vehicle_id)
-
-        # Remove title from data
-        entry_data = {k: v for k, v in import_data.items() if k != "title"}
-
-        _LOGGER.info("Creating entry for: %s", title)
-        return self.async_create_entry(title=title, data=entry_data)
+        """Handle import from legacy config entries.
+        
+        This migrates old per-vehicle entries to the new per-account format.
+        """
+        _LOGGER.info("Import step called - legacy migration")
+        
+        # If this is a legacy import with vehicle_id, abort - 
+        # migration should be handled in __init__.py
+        if CONF_VEHICLE_ID in import_data:
+            _LOGGER.info("Legacy vehicle entry import - will be migrated")
+            return self.async_abort(reason="legacy_migration")
+        
+        return self.async_abort(reason="unknown")

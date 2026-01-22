@@ -11,8 +11,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from . import VehicleCoordinator
-from .const import CONF_VEHICLE_ID, DOMAIN, SEAT_STATUS, STR_TO_SEAT_SETTING
+from . import VehicleCoordinator, get_all_coordinators
+from .const import DOMAIN, SEAT_STATUS, STR_TO_SEAT_SETTING
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 OFF = ["Off"]
@@ -77,15 +77,18 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the entity."""
-    vehicle_id = config_entry.data[CONF_VEHICLE_ID]
-    coordinator: VehicleCoordinator = hass.data[DOMAIN][vehicle_id]
+    coordinators = get_all_coordinators(hass)
 
-    async_add_entities(
-        SeatSelect(coordinator, select_description)
-        for select_description in SEAT_SELECTIONS
-        if coordinator.has_climate_seats
-        if select_description.exists_fn(coordinator)
-    )
+    entities = []
+    for coordinator in coordinators.values():
+        entities.extend(
+            SeatSelect(coordinator, select_description)
+            for select_description in SEAT_SELECTIONS
+            if coordinator.has_climate_seats
+            if select_description.exists_fn(coordinator)
+        )
+    
+    async_add_entities(entities)
 
 
 class SeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
