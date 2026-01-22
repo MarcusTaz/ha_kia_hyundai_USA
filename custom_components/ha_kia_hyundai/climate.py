@@ -107,6 +107,7 @@ class Thermostat(VehicleCoordinatorBaseEntity, ClimateEntity):
                     set_temp=int(self.target_temperature),
                     defrost=self.coordinator.climate_desired_defrost,
                     heating=self.coordinator.climate_desired_heating_acc,
+                    steering_wheel_heat=self.coordinator.desired_steering_wheel_heat,
                     driver_seat=self.coordinator.desired_driver_seat_comfort,
                     passenger_seat=self.coordinator.desired_passenger_seat_comfort,
                     left_rear_seat=self.coordinator.desired_left_rear_seat_comfort,
