@@ -195,7 +195,7 @@ class SteeringWheelHeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, Restor
     def __init__(self, coordinator: VehicleCoordinator):
         """Initialize steering wheel heat select."""
         super().__init__(coordinator, SelectEntityDescription(
-            key="desired_steering_wheel_heat",
+            key="climate_steering_wheel_heat",
             name="Steering Wheel Heat with Climate",
             icon="mdi:steering",
         ))
