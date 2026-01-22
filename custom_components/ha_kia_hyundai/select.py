@@ -43,28 +43,28 @@ SEAT_SELECTIONS: Final[tuple[KiaSelectEntityDescription, ...]] = (
     KiaSelectEntityDescription(
         key="desired_driver_seat_comfort",
         name="Seat-Driver with Climate",
-        exists_fn=lambda coordinator: bool(coordinator.front_seat_options.get(HEAT_TYPE, 0)),
+        exists_fn=lambda coordinator: True,  # Existence checked by has_climate_seats
         value_fn=lambda coordinator: SEAT_STATUS.get(coordinator.climate_driver_seat, "Off"),
         options_fn=lambda coordinator: coordinator.front_seat_options,
     ),
     KiaSelectEntityDescription(
         key="desired_passenger_seat_comfort",
         name="Seat-Passenger with Climate",
-        exists_fn=lambda coordinator: bool(coordinator.front_seat_options.get(HEAT_TYPE, 0)),
+        exists_fn=lambda coordinator: True,  # Existence checked by has_climate_seats
         value_fn=lambda coordinator: SEAT_STATUS.get(coordinator.climate_passenger_seat, "Off"),
         options_fn=lambda coordinator: coordinator.front_seat_options,
     ),
     KiaSelectEntityDescription(
         key="desired_left_rear_seat_comfort",
         name="Seat-Left Rear with Climate",
-        exists_fn=lambda coordinator: bool(coordinator.rear_seat_options.get(HEAT_TYPE, 0)),
+        exists_fn=lambda coordinator: bool(coordinator.rear_seat_options.get(HEAT_TYPE, 0)),  # Rear seats may not exist
         value_fn=lambda coordinator: SEAT_STATUS.get(coordinator.climate_left_rear_seat, "Off"),
         options_fn=lambda coordinator: coordinator.rear_seat_options,
     ),
     KiaSelectEntityDescription(
         key="desired_right_rear_seat_comfort",
         name="Seat-Right Rear with Climate",
-        exists_fn=lambda coordinator: bool(coordinator.rear_seat_options.get(HEAT_TYPE, 0)),
+        exists_fn=lambda coordinator: bool(coordinator.rear_seat_options.get(HEAT_TYPE, 0)),  # Rear seats may not exist
         value_fn=lambda coordinator: SEAT_STATUS.get(coordinator.climate_right_rear_seat, "Off"),
         options_fn=lambda coordinator: coordinator.rear_seat_options,
     ),
@@ -100,17 +100,21 @@ class SeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
     def options(self) -> list[str]:
         """Return the available options."""
         installed_options = self.entity_description.options_fn(self.coordinator)
-        if installed_options:
-            if installed_options[HEAT_TYPE] == 3:
-                return (
-                    OFF
-                    + HEAT_OPTIONS[installed_options[STEPS]]
-                    + COOL_OPTIONS[installed_options[STEPS]]
-                )
-            if installed_options[HEAT_TYPE] == 2:
-                return OFF + COOL_OPTIONS[installed_options[STEPS]]
-            return OFF + HEAT_OPTIONS[installed_options[STEPS]]
-        return OFF
+        heat_type = installed_options.get(HEAT_TYPE, 0) if installed_options else 0
+        steps = installed_options.get(STEPS, 3) if installed_options else 3  # Default to 3 levels
+        
+        # If heat_type is 0 or unknown, default to showing all options (heat + cool with 3 levels)
+        if heat_type == 3 or heat_type == 0:
+            # Both heat and cool, or unknown - show all options
+            return OFF + HEAT_OPTIONS.get(steps, HEAT_OPTIONS[3]) + COOL_OPTIONS.get(steps, COOL_OPTIONS[3])
+        if heat_type == 2:
+            # Cool only
+            return OFF + COOL_OPTIONS.get(steps, COOL_OPTIONS[3])
+        if heat_type == 1:
+            # Heat only
+            return OFF + HEAT_OPTIONS.get(steps, HEAT_OPTIONS[3])
+        # Fallback - show all options
+        return OFF + HEAT_OPTIONS[3] + COOL_OPTIONS[3]
 
     @property
     def available(self) -> bool:
