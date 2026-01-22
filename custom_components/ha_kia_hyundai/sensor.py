@@ -21,8 +21,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from . import VehicleCoordinator
-from .const import CONF_VEHICLE_ID, DOMAIN, SEAT_STATUS
+from . import VehicleCoordinator, get_all_coordinators
+from .const import DOMAIN, SEAT_STATUS
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 _LOGGER = getLogger(__name__)
@@ -162,28 +162,29 @@ SEAT_SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
 async def async_setup_entry(
     hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    vehicle_id = config_entry.data[CONF_VEHICLE_ID]
-    coordinator: VehicleCoordinator = hass.data[DOMAIN][vehicle_id]
-
-    sensors: list[SensorEntity] = [
-        APIActionInProgress(coordinator=coordinator),
-    ]
-    for sensor_description in SENSOR_DESCRIPTIONS:
-        _LOGGER.debug(f"Adding sensor {sensor_description.key}? preserve_state:{sensor_description.preserve_state is True} or value:{getattr(coordinator, sensor_description.key)} is not None:{getattr(coordinator, sensor_description.key) is not None}")
-        if sensor_description.preserve_state or getattr(coordinator, sensor_description.key) is not None:
-            _LOGGER.debug(f"added {sensor_description.key}")
-            sensors.append(
-                InstrumentSensor(
-                    coordinator,
-                    sensor_description,
+    coordinators = get_all_coordinators(hass)
+    
+    sensors: list[SensorEntity] = []
+    
+    for coordinator in coordinators.values():
+        sensors.append(APIActionInProgress(coordinator=coordinator))
+        
+        for sensor_description in SENSOR_DESCRIPTIONS:
+            _LOGGER.debug(f"Adding sensor {sensor_description.key}? preserve_state:{sensor_description.preserve_state is True} or value:{getattr(coordinator, sensor_description.key)} is not None:{getattr(coordinator, sensor_description.key) is not None}")
+            if sensor_description.preserve_state or getattr(coordinator, sensor_description.key) is not None:
+                _LOGGER.debug(f"added {sensor_description.key}")
+                sensors.append(
+                    InstrumentSensor(
+                        coordinator,
+                        sensor_description,
+                    )
                 )
-            )
-    sensors.extend(
-        SeatSensor(coordinator, seat_description)
-        for seat_description in SEAT_SENSOR_DESCRIPTIONS
-        if coordinator.has_climate_seats
-        if seat_description.exists_fn(coordinator)
-    )
+        sensors.extend(
+            SeatSensor(coordinator, seat_description)
+            for seat_description in SEAT_SENSOR_DESCRIPTIONS
+            if coordinator.has_climate_seats
+            if seat_description.exists_fn(coordinator)
+        )
 
     async_add_entities(sensors)
 

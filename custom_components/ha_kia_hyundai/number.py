@@ -12,8 +12,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from custom_components.ha_kia_hyundai import DOMAIN, CONF_VEHICLE_ID, VehicleCoordinator
-from custom_components.ha_kia_hyundai.vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
+from . import DOMAIN, VehicleCoordinator, get_all_coordinators
+from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 _LOGGER = getLogger(__name__)
 
@@ -49,15 +49,15 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    vehicle_id = config_entry.data[CONF_VEHICLE_ID]
-    coordinator: VehicleCoordinator = hass.data[DOMAIN][vehicle_id]
+    coordinators = get_all_coordinators(hass)
 
     entities = []
-    for description in NUMBER_DESCRIPTIONS:
-        if getattr(coordinator, description.key, None) is not None:
-            entities.append(
-                ChargeLimitNumber(coordinator, description)
-            )
+    for coordinator in coordinators.values():
+        for description in NUMBER_DESCRIPTIONS:
+            if getattr(coordinator, description.key, None) is not None:
+                entities.append(
+                    ChargeLimitNumber(coordinator, description)
+                )
 
     async_add_entities(entities)
 

@@ -5,13 +5,16 @@ from enum import Enum
 from homeassistant.const import Platform
 
 DOMAIN: str = "ha_kia_hyundai"
+# Legacy - kept for migration
 CONF_VEHICLE_ID: str = "vehicle_id"
+# New - stores list of vehicle info dicts
+CONF_VEHICLES: str = "vehicles"
 CONF_OTP_TYPE: str = "otp_type"
 CONF_OTP_CODE: str = "otp_code"
 CONF_DEVICE_ID: str = "device_id"
 CONF_REFRESH_TOKEN: str = "refresh_token"
 
-CONFIG_FLOW_TEMP_VEHICLES: str = "vehicles"
+CONFIG_FLOW_TEMP_VEHICLES: str = "_temp_vehicles"
 
 DEFAULT_SCAN_INTERVAL: int = 10
 DELAY_BETWEEN_ACTION_IN_PROGRESS_CHECKING: int = 20
