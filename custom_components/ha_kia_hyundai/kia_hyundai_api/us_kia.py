@@ -571,6 +571,7 @@ class UsKia:
                     "rearWindow": int(heating),
                     "sideMirror": int(heating),
                     "steeringWheel": int(heating),
+                    "steeringWheelStep": 0,  # EU library pattern: 0=off, 1=low, 2=high
                 },
                 "ignitionOnDuration": {
                     "unit": 4,
