@@ -36,49 +36,30 @@ _LOGGER = logging.getLogger(__name__)
 
 def _seat_settings(level: SeatSettings | None) -> dict:
     """Derive the seat settings from a seat setting enum."""
-    match level:
-        case SeatSettings.HeatHigh:
-            return {
-                "heatVentType": 1,
-                "heatVentLevel": 4,
-                "heatVentStep": 1,
-            }
-        case SeatSettings.HeatMedium:
-            return {
-                "heatVentType": 1,
-                "heatVentLevel": 3,
-                "heatVentStep": 2,
-            }
-        case SeatSettings.HeatLow:
-            return {
-                "heatVentType": 1,
-                "heatVentLevel": 2,
-                "heatVentStep": 3,
-            }
-        case SeatSettings.CoolHigh:
-            return {
-                "heatVentType": 2,
-                "heatVentLevel": 4,
-                "heatVentStep": 1,
-            }
-        case SeatSettings.CoolMedium:
-            return {
-                "heatVentType": 2,
-                "heatVentLevel": 3,
-                "heatVentStep": 2,
-            }
-        case SeatSettings.CoolLow:
-            return {
-                "heatVentType": 2,
-                "heatVentLevel": 2,
-                "heatVentStep": 3,
-            }
-        case _:
-            return {
-                "heatVentType": 0,
-                "heatVentLevel": 1,
-                "heatVentStep": 0,
-            }
+    _LOGGER.debug("_seat_settings called with level=%s (type=%s)", level, type(level))
+    
+    if level is None:
+        return {"heatVentType": 0, "heatVentLevel": 1, "heatVentStep": 0}
+    
+    # Use value comparison to avoid enum identity issues across module imports
+    level_value = level.value if hasattr(level, 'value') else level
+    _LOGGER.debug("_seat_settings level_value=%s", level_value)
+    
+    # SeatSettings enum values: NONE=0, CoolLow=1, CoolMedium=2, CoolHigh=3, HeatLow=4, HeatMedium=5, HeatHigh=6
+    if level_value == 6:  # HeatHigh
+        return {"heatVentType": 1, "heatVentLevel": 4, "heatVentStep": 1}
+    elif level_value == 5:  # HeatMedium
+        return {"heatVentType": 1, "heatVentLevel": 3, "heatVentStep": 2}
+    elif level_value == 4:  # HeatLow
+        return {"heatVentType": 1, "heatVentLevel": 2, "heatVentStep": 3}
+    elif level_value == 3:  # CoolHigh
+        return {"heatVentType": 2, "heatVentLevel": 4, "heatVentStep": 1}
+    elif level_value == 2:  # CoolMedium
+        return {"heatVentType": 2, "heatVentLevel": 3, "heatVentStep": 2}
+    elif level_value == 1:  # CoolLow
+        return {"heatVentType": 2, "heatVentLevel": 2, "heatVentStep": 3}
+    else:  # NONE (0) or unknown
+        return {"heatVentType": 0, "heatVentLevel": 1, "heatVentStep": 0}
 
 
 class UsKia:
