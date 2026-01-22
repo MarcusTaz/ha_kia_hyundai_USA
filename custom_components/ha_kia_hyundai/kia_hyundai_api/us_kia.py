@@ -543,6 +543,7 @@ class UsKia:
             defrost: bool,
             climate: bool,
             heating: bool,
+            steering_wheel_heat: int = 0,
             driver_seat: SeatSettings | None = None,
             passenger_seat: SeatSettings | None = None,
             left_rear_seat: SeatSettings | None = None,
@@ -550,15 +551,19 @@ class UsKia:
     ):
         _LOGGER.info("===== US_KIA START_CLIMATE CALLED =====")
         _LOGGER.info(
-            "start_climate params: temp=%s, defrost=%s, climate=%s, heating=%s, "
+            "start_climate params: temp=%s, defrost=%s, climate=%s, heating=%s, steering_wheel=%s, "
             "driver_seat=%s, passenger_seat=%s, left_rear=%s, right_rear=%s",
-            set_temp, defrost, climate, heating,
+            set_temp, defrost, climate, heating, steering_wheel_heat,
             driver_seat, passenger_seat, left_rear_seat, right_rear_seat
         )
         if await self.check_last_action_finished(vehicle_id=vehicle_id) is False:
             raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
         url = API_URL_BASE + "rems/start"
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
+        
+        # Determine steering wheel value: use explicit setting or fall back to heating bool
+        steering_wheel_value = steering_wheel_heat if steering_wheel_heat > 0 else int(heating)
+        
         body = {
             "remoteClimate": {
                 "airCtrl": climate,
@@ -570,7 +575,8 @@ class UsKia:
                 "heatingAccessory": {
                     "rearWindow": int(heating),
                     "sideMirror": int(heating),
-                    "steeringWheel": int(heating),
+                    "steeringWheel": steering_wheel_value,
+                    "steeringWheelStep": steering_wheel_heat,  # Step level (0=off, 1=low, 2=high)
                 },
                 "ignitionOnDuration": {
                     "unit": 4,
@@ -578,6 +584,7 @@ class UsKia:
                 },
             }
         }
+        _LOGGER.debug("Heating accessory payload: %s", body["remoteClimate"]["heatingAccessory"])
         # Always include seat settings if any are provided OR if they have non-None/non-NONE values
         has_seat_settings = any([
             driver_seat is not None and driver_seat != SeatSettings.NONE,

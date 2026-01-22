@@ -40,6 +40,7 @@ class VehicleCoordinator(DataUpdateCoordinator):
     # Desired climate settings (set by UI before starting climate)
     climate_desired_defrost: bool = False
     climate_desired_heating_acc: bool = False
+    desired_steering_wheel_heat: int = 0  # 0=off, 1=low, 2=high
     desired_driver_seat_comfort: SeatSettings | None = None
     desired_passenger_seat_comfort: SeatSettings | None = None
     desired_left_rear_seat_comfort: SeatSettings | None = None
@@ -295,6 +296,33 @@ class VehicleCoordinator(DataUpdateCoordinator):
             "lastVehicleInfo.vehicleStatusRpt.vehicleStatus.climate.heatingAccessory.steeringWheel",
             bool
         )
+
+    @property
+    def has_heated_steering_wheel(self) -> bool:
+        """Return if vehicle has heated steering wheel."""
+        return safely_get_json_value(
+            self.data,
+            "vehicleConfig.vehicleFeature.remoteFeature.heatedSteeringWheel",
+            bool,
+        )
+
+    @property
+    def steering_wheel_heat_step_level(self) -> int:
+        """Return steering wheel heat step level (number of levels: 1 or 2)."""
+        return safely_get_json_value(
+            self.data,
+            "vehicleConfig.vehicleFeature.remoteFeature.steeringWheelStepLevel",
+            int,
+        ) or 1
+
+    @property
+    def climate_steering_wheel_step(self) -> int:
+        """Return current steering wheel heat step (0=off, 1=low, 2=high)."""
+        return safely_get_json_value(
+            self.data,
+            "lastVehicleInfo.vehicleStatusRpt.vehicleStatus.climate.heatingAccessory.steeringWheelStep",
+            int,
+        ) or 0
 
     @property
     def door_hood_open(self) -> bool:
