@@ -75,10 +75,7 @@ New features being tested:
 
 ## Multiple Vehicles
 
-The integration supports multiple vehicles per account. Due to Kia API rate limiting:
-- Up to 2 vehicles are added per login session
-- Wait 24 hours if you have 3+ vehicles, then log in again to add more
-- Older vehicles (pre-ccOS infotainment) may have limited compatibility
+The integration fully supports multiple vehicles per account. All vehicles linked to your Kia Connect account will be automatically discovered and added.
 
 ## Troubleshooting
 
@@ -101,10 +98,15 @@ Settings → Devices & Services → Kia US → ⋮ → Enable debug logging
 
 ## Why This Fork?
 
-The original [dahlb/ha_kia_hyundai](https://github.com/dahlb/ha_kia_hyundai) was archived in December 2024. This fork provides:
-- Fixed OTP authentication
-- Active bug fixes and maintenance
-- New features (steering wheel heat, etc.)
+The original [dahlb/ha_kia_hyundai](https://github.com/dahlb/ha_kia_hyundai) and its underlying [kia-hyundai-api](https://github.com/dahlb/kia-hyundai-api) were archived in December 2024. 
+
+This fork incorporates fixes from the **[Hyundai-Kia-Connect/hyundai-kia-connect-api](https://github.com/Hyundai-Kia-Connect/hyundai_kia_connect_api)** (EU) library to restore functionality for USA users:
+
+- **Fixed OTP authentication** - Using EU library's iOS header approach
+- **Fixed rate limiting** - No more 2-vehicle limit per session
+- **Steering wheel heat control** - Proper `steeringWheelStep` API format from EU library
+- **Seat climate controls** - Heat/cool settings working
+- **Active maintenance** - Ongoing bug fixes and new features
 
 ## Credits
 
