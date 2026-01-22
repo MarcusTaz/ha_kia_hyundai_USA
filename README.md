@@ -1,13 +1,14 @@
-# Kia Connect (USA) - Community Maintained
+# Kia / Hyundai / Genesis Connect (USA) - Community Maintained
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![GitHub Release](https://img.shields.io/github/v/release/MarcusTaz/ha_kia_hyundai_USA?include_prereleases)](https://github.com/MarcusTaz/ha_kia_hyundai_USA/releases)
 [![License](https://img.shields.io/github/license/MarcusTaz/ha_kia_hyundai_USA.svg)](LICENSE)
 
-A Home Assistant integration for **Kia Connect (USA)** with **OTP authentication support**. Community-maintained fork with active development after the original repository was archived.
+A Home Assistant integration for **Kia Connect**, **Hyundai BlueLink**, and **Genesis Connected Services** (USA) with multi-brand authentication support. Community-maintained fork with active development after the original repository was archived.
 
 ## Features
 
+- **Multi-Brand Support** - Kia, Hyundai, and Genesis vehicles
 - **Battery & Charging** - EV battery level, charging status, plugged-in state, AC/DC charge limits
 - **Climate Control** - Start/stop HVAC remotely, set temperature, defrost, heated seats
 - **Steering Wheel Heat** - Off/Low/High control (for supported vehicles)
@@ -17,9 +18,11 @@ A Home Assistant integration for **Kia Connect (USA)** with **OTP authentication
 
 ## Requirements
 
-- **USA Only** - Kia vehicles registered in the United States
-- **Active Kia Connect Subscription** - Required for API access
-- **OTP Authentication** - Supports SMS or Email verification
+- **USA Only** - Vehicles registered in the United States
+- **Active Subscription** - Kia Connect, Hyundai BlueLink, or Genesis Connected Services
+- **Authentication**:
+  - **Kia**: OTP via SMS or Email
+  - **Hyundai/Genesis**: 4-digit PIN (same PIN used in the mobile app)
 
 ## Installation
 
@@ -39,27 +42,40 @@ A Home Assistant integration for **Kia Connect (USA)** with **OTP authentication
 
 ## Configuration
 
+### Kia Setup
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
 2. Search for **"Kia US"**
-3. Enter your Kia Connect credentials
-4. Choose OTP delivery method (SMS or Email)
-5. Enter the OTP code when prompted
+3. Select **Kia** as your brand
+4. Enter your Kia Connect credentials
+5. Choose OTP delivery method (SMS or Email)
+6. Enter the OTP code when prompted
+7. Your vehicles will be automatically added
+
+### Hyundai / Genesis Setup
+1. Go to **Settings** → **Devices & Services** → **Add Integration**
+2. Search for **"Kia US"**
+3. Select **Hyundai** or **Genesis** as your brand
+4. Enter your BlueLink / Connected Services credentials
+5. Enter your 4-digit PIN (same PIN used in the mobile app)
 6. Your vehicles will be automatically added
 
-## Beta Testing (v2.1.0-beta1)
+## Beta Testing (v2.1.0-beta2)
 
 New features being tested:
 
+- **Hyundai BlueLink Support** - Full integration with PIN-based authentication
+- **Genesis Connected Services Support** - Full integration with PIN-based authentication
 - **Steering Wheel Heat Control** - Off/Low/High settings via dropdown selector
 - Uses vehicle's `steeringWheelStepLevel` to show correct options per vehicle
 
 **To install beta:**
 1. In HACS, find the integration
 2. Click **⋮** → **Redownload**
-3. Select version **2.1.0-beta1**
+3. Select version **2.1.0-beta2**
 4. Restart Home Assistant
 
-**Tested on:** EV6, EV9 (2024-2025 models)
+**Kia tested on:** EV6, EV9 (2024-2025 models)
+**Hyundai/Genesis:** Seeking testers!
 
 ## Entities
 
@@ -79,15 +95,20 @@ The integration fully supports multiple vehicles per account. All vehicles linke
 
 ## Troubleshooting
 
-**OTP not arriving?**
+**Kia OTP not arriving?**
 - Verify phone/email is correct in Kia Connect app
 - Check spam folder for email OTP
 - Codes expire after a few minutes
 
+**Hyundai/Genesis login failing?**
+- Verify credentials work in the official mobile app
+- Ensure you're using the correct 4-digit PIN
+- PIN is case-sensitive (numbers only)
+
 **Vehicle not appearing?**
-- Verify vehicle works in official Kia Connect app
+- Verify vehicle works in official mobile app
 - Older infotainment systems may not be compatible
-- Check Kia Connect subscription is active
+- Check your subscription is active
 
 **Enable debug logging:**
 Settings → Devices & Services → Kia US → ⋮ → Enable debug logging
@@ -129,7 +150,7 @@ The embedded API code lives in `custom_components/ha_kia_hyundai/kia_hyundai_api
 
 ## Disclaimer
 
-This integration is not affiliated with Kia Motors. Use at your own risk. Excessive API calls may drain your vehicle's 12V battery.
+This integration is not affiliated with Kia, Hyundai, or Genesis Motors. Use at your own risk. Excessive API calls may drain your vehicle's 12V battery.
 
 ## Support
 

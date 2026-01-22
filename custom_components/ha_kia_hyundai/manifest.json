@@ -1,6 +1,6 @@
 {
   "domain": "ha_kia_hyundai",
-  "name": "Kia/Hyundai US",
+  "name": "Kia/Hyundai/Genesis US",
   "codeowners": ["@MarcusTaz"],
   "config_flow": true,
   "documentation": "https://github.com/MarcusTaz/ha_kia_hyundai_USA",
@@ -8,5 +8,5 @@
   "issue_tracker": "https://github.com/MarcusTaz/ha_kia_hyundai_USA/issues",
   "loggers": ["ha_kia_hyundai", "kia_hyundai_api"],
   "requirements": ["pytz>=2021.3"],
-  "version": "2.1.0-beta1"
+  "version": "2.1.0-beta2"
 }

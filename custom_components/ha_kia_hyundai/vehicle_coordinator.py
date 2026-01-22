@@ -1,7 +1,7 @@
-"""Vehicle Coordinator for Kia/Hyundai US integration.
+"""Vehicle Coordinator for Kia/Hyundai/Genesis US integration.
 
 This coordinator manages data updates and API interactions using the
-embedded fixed kia-hyundai-api library.
+embedded API libraries for Kia, Hyundai, and Genesis.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 from asyncio import sleep
 from datetime import timedelta, datetime
 from logging import getLogger
-from typing import Any
+from typing import Any, Union
 
 from aiohttp import ClientError
 from homeassistant.config_entries import ConfigEntry
@@ -22,6 +22,8 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .kia_hyundai_api import UsKia
+from .kia_hyundai_api.us_hyundai import UsHyundai
+from .kia_hyundai_api.us_genesis import UsGenesis
 from .const import (
     DOMAIN,
     DELAY_BETWEEN_ACTION_IN_PROGRESS_CHECKING,
@@ -32,6 +34,9 @@ from .const import (
 from .util import safely_get_json_value, convert_last_updated_str_to_datetime
 
 _LOGGER = getLogger(__name__)
+
+# Type alias for all supported API clients
+ApiConnection = Union[UsKia, UsHyundai, UsGenesis]
 
 
 class VehicleCoordinator(DataUpdateCoordinator):
@@ -54,14 +59,14 @@ class VehicleCoordinator(DataUpdateCoordinator):
         vehicle_id: str,
         vehicle_name: str,
         vehicle_model: str,
-        api_connection: UsKia,
+        api_connection: ApiConnection,
         scan_interval: timedelta,
     ) -> None:
         """Initialize the coordinator."""
         self.vehicle_id: str = vehicle_id
         self.vehicle_name: str = vehicle_name
         self.vehicle_model: str = vehicle_model
-        self.api_connection: UsKia = api_connection
+        self.api_connection: ApiConnection = api_connection
 
         request_refresh_debouncer = Debouncer(
             hass,
