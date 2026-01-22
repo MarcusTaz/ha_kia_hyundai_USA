@@ -99,16 +99,16 @@ async def async_setup_entry(
 
     entities = []
     for coordinator in coordinators.values():
-        # Add seat selects
+        # Add steering wheel heat select first (appears under rear defrost)
+        if coordinator.steering_wheel_heat_supported:
+            entities.append(SteeringWheelHeatSelect(coordinator))
+        # Add seat selects after steering wheel
         entities.extend(
             SeatSelect(coordinator, select_description)
             for select_description in SEAT_SELECTIONS
             if coordinator.has_climate_seats
             if select_description.exists_fn(coordinator)
         )
-        # Add steering wheel heat select if supported
-        if coordinator.steering_wheel_heat_supported:
-            entities.append(SteeringWheelHeatSelect(coordinator))
     
     async_add_entities(entities)
 
