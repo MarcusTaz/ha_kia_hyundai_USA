@@ -113,6 +113,7 @@ We studied the **[Hyundai-Kia-Connect/hyundai-kia-connect-api](https://github.co
 - **Fixed rate limiting** - All vehicles discovered in single session
 - **Steering wheel heat control** - Full Off/Low/High support
 - **Seat climate controls** - Heat and ventilation working
+- **Improved UI** - Renamed defrost controls for clarity (Front/Rear Defrost), fixed rear defrost icon
 - **Active maintenance** - Ongoing bug fixes and community-driven development
 
 The embedded API code lives in `custom_components/ha_kia_hyundai/kia_hyundai_api/`.
