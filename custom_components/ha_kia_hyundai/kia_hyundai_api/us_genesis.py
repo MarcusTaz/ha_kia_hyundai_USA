@@ -259,37 +259,69 @@ class UsGenesis:
         
         Tries direct OAuth login first. If OTP is required, handles the OTP flow.
         """
+        _LOGGER.info("========== GENESIS LOGIN START ==========")
+        _LOGGER.info("Genesis login attempt for user: %s", self.username)
+        _LOGGER.info("Using API host: %s", GENESIS_API_URL_HOST)
+        _LOGGER.info("Login URL: %s", GENESIS_LOGIN_API_BASE + "oauth/token")
+        _LOGGER.info("OTP callback provided: %s", self.otp_callback is not None)
+        
         # First, try the OAuth token endpoint (works for some accounts)
         url = GENESIS_LOGIN_API_BASE + "oauth/token"
         data = {"username": self.username, "password": self.password}
         
-        _LOGGER.debug("Genesis login attempt for user: %s", self.username)
+        headers = self._api_headers()
+        _LOGGER.info("Request headers (sanitized): brandIndicator=%s, client_id=%s", 
+                    headers.get("brandIndicator"), headers.get("client_id"))
         
         response = await self._post_request_with_logging_and_errors_raised(
             url=url,
             json_body=data,
-            headers=self._api_headers(),
+            headers=headers,
         )
         
         response_json = await response.json()
-        _LOGGER.debug("Genesis login response: %s", response_json)
+        _LOGGER.info("Genesis login response status: %s", response.status)
+        _LOGGER.info("Genesis login response keys: %s", list(response_json.keys()))
+        
+        # Log specific fields for debugging (not sensitive data)
+        if "access_token" in response_json:
+            _LOGGER.info("Response contains access_token: YES (length: %d)", len(response_json.get("access_token", "")))
+        else:
+            _LOGGER.info("Response contains access_token: NO")
+        
+        if "otpKey" in response_json:
+            _LOGGER.info("Response contains otpKey: YES")
+        else:
+            _LOGGER.info("Response contains otpKey: NO")
+            
+        if "errorCode" in response_json:
+            _LOGGER.info("Response errorCode: %s", response_json.get("errorCode"))
+            _LOGGER.info("Response errorMessage: %s", response_json.get("errorMessage"))
+            _LOGGER.info("Response errorSubCode: %s", response_json.get("errorSubCode"))
+            _LOGGER.info("Response errorSubMessage: %s", response_json.get("errorSubMessage"))
+        
+        _LOGGER.info("Full response (for debugging): %s", response_json)
         
         # Check if we got an access token directly
         if response_json.get("access_token"):
             self.access_token = response_json["access_token"]
             self.refresh_token = response_json.get("refresh_token")
-            _LOGGER.info("Genesis Connected Services login successful (direct auth)")
+            _LOGGER.info("========== GENESIS LOGIN SUCCESS (direct auth) ==========")
             return
         
         # Check if OTP is required
         if "otpKey" in response_json or response_json.get("responseCode") == "OTP_REQUIRED":
+            _LOGGER.info("========== GENESIS OTP REQUIRED ==========")
             _LOGGER.info("Genesis account requires OTP authentication")
             
             if self.otp_callback is None:
+                _LOGGER.error("OTP required but no callback provided!")
                 raise AuthError("OTP required but no OTP callback provided. Please reconfigure with OTP support.")
             
             self.otp_key = response_json.get("otpKey", "")
             self.otp_xid = response.headers.get("xid", "")
+            _LOGGER.info("OTP key received: %s", bool(self.otp_key))
+            _LOGGER.info("OTP xid received: %s", bool(self.otp_xid))
             
             # Get OTP destination from callback
             ctx_choice = {
@@ -299,33 +331,47 @@ class UsGenesis:
                 "email": response_json.get("email", ""),
                 "phone": response_json.get("phone", ""),
             }
+            _LOGGER.info("Calling OTP callback for destination choice...")
             callback_response = await self.otp_callback(ctx_choice)
             notify_type = str(callback_response.get("notify_type", "EMAIL")).upper()
+            _LOGGER.info("OTP destination chosen: %s", notify_type)
             
             # Send OTP
+            _LOGGER.info("Sending OTP to %s...", notify_type)
             await self._send_otp(notify_type)
+            _LOGGER.info("OTP send request completed")
             
             # Get OTP code from callback
             ctx_code = {
                 "stage": "input_code",
                 "notify_type": notify_type,
             }
+            _LOGGER.info("Calling OTP callback for code input...")
             otp_response = await self.otp_callback(ctx_code)
             otp_code = str(otp_response.get("otp_code", "")).strip()
+            _LOGGER.info("OTP code received (length: %d)", len(otp_code))
             
             if not otp_code:
                 raise AuthError("OTP code required")
             
             # Verify OTP
+            _LOGGER.info("Verifying OTP code...")
             await self._verify_otp(otp_code)
+            _LOGGER.info("OTP verification completed, access_token: %s, session_id: %s", 
+                        bool(self.access_token), bool(self.session_id))
             
             if not self.access_token and not self.session_id:
                 raise AuthError("OTP verification failed - no token received")
             
-            _LOGGER.info("Genesis Connected Services login successful (OTP auth)")
+            _LOGGER.info("========== GENESIS LOGIN SUCCESS (OTP auth) ==========")
             return
         
-        # Login failed
+        # Login failed - log everything we know
+        _LOGGER.error("========== GENESIS LOGIN FAILED ==========")
+        _LOGGER.error("No access_token and no OTP flow triggered")
+        _LOGGER.error("Response keys: %s", list(response_json.keys()))
+        _LOGGER.error("Full response: %s", response_json)
+        
         error_msg = response_json.get("errorMessage", response_json.get("message", "Unknown error"))
         raise AuthError(f"Genesis login failed: {error_msg}")
 
