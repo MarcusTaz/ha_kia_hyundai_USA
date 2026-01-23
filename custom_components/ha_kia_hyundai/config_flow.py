@@ -228,7 +228,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         )
 
     async def async_step_bluelink_credentials(self, user_input: dict[str, Any] | None = None):
-        """Handle Hyundai/Genesis credentials input (with PIN, no OTP)."""
+        """Handle Hyundai/Genesis credentials input (with PIN and optional OTP)."""
         brand = self.data.get(CONF_BRAND, BRAND_HYUNDAI)
         brand_name = BRANDS.get(brand, "Hyundai")
         
@@ -240,6 +240,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             vol.Required(CONF_USERNAME, default=default_username): str,
             vol.Required(CONF_PASSWORD): str,
             vol.Required(CONF_PIN): str,
+            vol.Required(CONF_OTP_TYPE, default="EMAIL"): vol.In(["EMAIL", "SMS"]),
         })
         errors: dict[str, str] = {}
 
@@ -247,6 +248,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             username = user_input[CONF_USERNAME]
             password = user_input[CONF_PASSWORD]
             pin = user_input[CONF_PIN]
+            otp_type = user_input[CONF_OTP_TYPE]
 
             # Validate PIN format (should be 4 digits)
             if not pin.isdigit() or len(pin) != 4:
@@ -258,6 +260,28 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                     await self.async_set_unique_id(unique_id)
                     self._abort_if_unique_id_configured()
 
+                # OTP callback for Hyundai/Genesis (if account requires it)
+                async def otp_callback(context: dict[str, Any]):
+                    stage = context.get("stage")
+                    _LOGGER.info("%s OTP callback called with stage: %s", brand_name, stage)
+                    
+                    if stage == "choose_destination":
+                        _LOGGER.info("OTP destination: %s", otp_type)
+                        return {"notify_type": otp_type}
+                    
+                    if stage == "input_code":
+                        _LOGGER.info("Waiting for OTP code input...")
+                        for i in range(120):
+                            if CONF_OTP_CODE in self.data:
+                                otp_code = self.data[CONF_OTP_CODE]
+                                _LOGGER.info("OTP code received (length: %d)", len(otp_code))
+                                return {"otp_code": otp_code}
+                            await asyncio.sleep(1)
+                        
+                        raise ConfigEntryAuthFailed("2 minute timeout waiting for OTP code")
+                    
+                    raise ConfigEntryAuthFailed(f"Unknown OTP stage: {stage}")
+
                 try:
                     client_session = async_get_clientsession(self.hass)
                     
@@ -267,6 +291,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                             username=username,
                             password=password,
                             pin=pin,
+                            otp_callback=otp_callback,
                             client_session=client_session,
                         )
                     else:  # Genesis
@@ -275,6 +300,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                             username=username,
                             password=password,
                             pin=pin,
+                            otp_callback=otp_callback,
                             client_session=client_session,
                         )
                     
@@ -286,40 +312,22 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                         CONF_USERNAME: username,
                         CONF_PASSWORD: password,
                         CONF_PIN: pin,
+                        CONF_OTP_TYPE: otp_type,
                         CONF_BRAND: brand,
                     })
 
-                    # Login and get vehicles (no OTP needed)
-                    _LOGGER.info("Logging in to %s...", brand_name)
-                    await self.api_connection.login()
+                    # Start login task (may require OTP)
+                    _LOGGER.info("Starting %s login task...", brand_name)
+                    self.otp_task = self.hass.loop.create_task(self._bluelink_login_and_get_vehicles())
                     
-                    _LOGGER.info("Getting vehicles...")
-                    await self.api_connection.get_vehicles()
-                    
-                    if not self.api_connection.vehicles:
-                        _LOGGER.error("No vehicles found")
-                        return self.async_abort(reason="no_vehicles")
-
-                    # Store discovered vehicles
-                    self.data[CONFIG_FLOW_TEMP_VEHICLES] = self.api_connection.vehicles
-                    self.data[CONF_DEVICE_ID] = self.api_connection.device_id
-                    
-                    # Hyundai/Genesis don't use the same refresh_token mechanism
-                    if hasattr(self.api_connection, 'refresh_token'):
-                        self.data[CONF_REFRESH_TOKEN] = self.api_connection.refresh_token
-
-                    _LOGGER.info("Found %d vehicles", len(self.api_connection.vehicles))
-                    for v in self.api_connection.vehicles:
-                        _LOGGER.info("  - %s: %s", 
-                                    v.get("nickName"), v.get("id"))
-
-                    return await self.async_step_confirm_vehicles()
+                    # Go to OTP step (will skip quickly if no OTP needed)
+                    return await self.async_step_otp_code()
 
                 except AuthError as e:
                     _LOGGER.error("Authentication error: %s", e)
                     errors["base"] = "auth"
                 except Exception as e:
-                    _LOGGER.exception("Error during login: %s", e)
+                    _LOGGER.exception("Error during login setup: %s", e)
                     errors["base"] = "auth"
 
         return self.async_show_form(
@@ -331,14 +339,55 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             },
         )
 
+    async def _bluelink_login_and_get_vehicles(self):
+        """Login to Hyundai/Genesis and get vehicles."""
+        brand_name = BRANDS.get(self.data.get(CONF_BRAND), "Hyundai/Genesis")
+        
+        _LOGGER.info("Logging in to %s...", brand_name)
+        await self.api_connection.login()
+        
+        _LOGGER.info("Getting vehicles...")
+        await self.api_connection.get_vehicles()
+        
+        if not self.api_connection.vehicles:
+            raise AuthError("No vehicles found in account")
+
     async def async_step_otp_code(self, user_input: dict[str, Any] | None = None):
         """Handle OTP code input step."""
         _LOGGER.debug("OTP code step with input: %s", user_input)
+        
+        brand = self.data.get(CONF_BRAND, BRAND_KIA)
 
         data_schema = vol.Schema({
             vol.Required(CONF_OTP_CODE): str,
         })
         errors: dict[str, str] = {}
+
+        # Check if the task already completed (no OTP needed for some Hyundai/Genesis accounts)
+        if self.otp_task is not None and self.otp_task.done():
+            try:
+                # Task already finished - check for errors
+                self.otp_task.result()  # This will raise if there was an exception
+                _LOGGER.info("Login completed without OTP!")
+                return await self._finalize_login()
+            except AuthError as e:
+                if "OTP required" in str(e):
+                    _LOGGER.info("OTP is required, showing OTP form")
+                    # Continue to show OTP form
+                else:
+                    _LOGGER.error("Authentication failed: %s", e)
+                    errors["base"] = "auth"
+                    return self.async_show_form(
+                        step_id="otp_code",
+                        data_schema=data_schema,
+                        errors=errors,
+                        description_placeholders={
+                            "otp_type": self.data.get(CONF_OTP_TYPE, "EMAIL/SMS"),
+                        },
+                    )
+            except Exception as e:
+                _LOGGER.exception("Error during login: %s", e)
+                errors["base"] = "auth"
 
         if user_input is not None:
             # Store the OTP code so the callback can read it
@@ -349,31 +398,8 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 # Wait for login task to complete
                 await self.otp_task
                 _LOGGER.info("Login completed successfully!")
-
-                if self.api_connection is None:
-                    raise ConfigEntryAuthFailed("API connection not established")
-
-                # Get vehicles
-                _LOGGER.info("Getting vehicles...")
-                await self.api_connection.get_vehicles()
                 
-                if not self.api_connection.vehicles:
-                    _LOGGER.error("No vehicles found")
-                    return self.async_abort(reason="no_vehicles")
-
-                # Store discovered vehicles for confirmation step
-                self.data[CONFIG_FLOW_TEMP_VEHICLES] = self.api_connection.vehicles
-                
-                # Store tokens
-                self.data[CONF_DEVICE_ID] = self.api_connection.device_id
-                self.data[CONF_REFRESH_TOKEN] = self.api_connection.refresh_token
-
-                _LOGGER.info("Found %d vehicles", len(self.api_connection.vehicles))
-                for v in self.api_connection.vehicles:
-                    _LOGGER.info("  - %s (%s): %s", 
-                                v.get("nickName"), v.get("modelName"), v.get("vehicleIdentifier"))
-
-                return await self.async_step_confirm_vehicles()
+                return await self._finalize_login()
 
             except AuthError as e:
                 _LOGGER.error("Authentication failed: %s", e)
@@ -393,6 +419,40 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 "otp_type": self.data.get(CONF_OTP_TYPE, "EMAIL/SMS"),
             },
         )
+
+    async def _finalize_login(self):
+        """Finalize login and move to vehicle confirmation."""
+        if self.api_connection is None:
+            raise ConfigEntryAuthFailed("API connection not established")
+
+        brand = self.data.get(CONF_BRAND, BRAND_KIA)
+        
+        # For Kia, we need to get vehicles after login
+        # For Hyundai/Genesis, vehicles are already fetched in _bluelink_login_and_get_vehicles
+        if brand == BRAND_KIA:
+            _LOGGER.info("Getting vehicles...")
+            await self.api_connection.get_vehicles()
+        
+        if not self.api_connection.vehicles:
+            _LOGGER.error("No vehicles found")
+            return self.async_abort(reason="no_vehicles")
+
+        # Store discovered vehicles for confirmation step
+        self.data[CONFIG_FLOW_TEMP_VEHICLES] = self.api_connection.vehicles
+        
+        # Store tokens
+        self.data[CONF_DEVICE_ID] = self.api_connection.device_id
+        if hasattr(self.api_connection, 'refresh_token') and self.api_connection.refresh_token:
+            self.data[CONF_REFRESH_TOKEN] = self.api_connection.refresh_token
+
+        _LOGGER.info("Found %d vehicles", len(self.api_connection.vehicles))
+        for v in self.api_connection.vehicles:
+            _LOGGER.info("  - %s (%s): %s", 
+                        v.get("nickName", v.get("name")), 
+                        v.get("modelName", v.get("modelCode")), 
+                        v.get("vehicleIdentifier", v.get("id")))
+
+        return await self.async_step_confirm_vehicles()
 
     async def async_step_confirm_vehicles(self, user_input: dict[str, Any] | None = None):
         """Show discovered vehicles and confirm setup."""

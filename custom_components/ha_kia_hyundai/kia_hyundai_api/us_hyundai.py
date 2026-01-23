@@ -1,10 +1,12 @@
 """UsHyundai - Hyundai BlueLink API for USA.
 
 Based on the EU library's HyundaiBlueLinkApiUSA implementation.
-Hyundai uses a simpler auth flow: username/password + PIN (no OTP required).
+Supports both:
+1. Direct login with username/password + PIN (older accounts)
+2. OTP authentication if required by the account (newer accounts)
 
 Key differences from Kia:
-1. No OTP authentication - direct login with username/password
+1. May or may not require OTP depending on account
 2. Requires PIN for vehicle commands
 3. Different API endpoints and headers
 4. Uses registration ID (regid) instead of vinkey
@@ -74,14 +76,19 @@ class UsHyundai:
     _ssl_context = None
     access_token: str | None = None
     refresh_token: str | None = None
+    session_id: str | None = None  # For OTP-based auth
     vehicles: list[dict] | None = None
     last_action = None
+    otp_key: str | None = None
+    otp_xid: str | None = None
+    notify_type: str | None = None
 
     def __init__(
             self,
             username: str,
             password: str,
             pin: str,
+            otp_callback: Callable[..., Coroutine[Any, Any, Any]] | None = None,
             device_id: str | None = None,
             client_session: ClientSession | None = None
     ):
@@ -95,12 +102,17 @@ class UsHyundai:
             User password
         pin : str
             BlueLink service PIN (4 digits)
+        otp_callback : Callable, optional
+            OTP handler if account requires OTP. Called with:
+            - stage='choose_destination' -> return {'notify_type': 'EMAIL'|'SMS'}
+            - stage='input_code' -> return {'otp_code': '<code>'}
         device_id : str, optional
             Device identifier for API
         """
         self.username = username
         self.password = password
         self.pin = pin
+        self.otp_callback = otp_callback
         self.device_id = device_id or str(uuid.uuid4()).upper()
         if client_session is None:
             self.api_session = ClientSession(raise_for_status=False)
@@ -202,8 +214,62 @@ class UsHyundai:
             ssl=await self.get_ssl_context()
         )
 
+    async def _send_otp(self, notify_type: str) -> dict:
+        """Send OTP to email or phone."""
+        if notify_type not in ("EMAIL", "SMS"):
+            raise ValueError(f"Invalid notify_type {notify_type}")
+        
+        url = HYUNDAI_LOGIN_API_BASE + "sendOTP"
+        self.notify_type = notify_type
+        
+        headers = self._api_headers()
+        if self.otp_key:
+            headers["otpKey"] = self.otp_key
+        if self.otp_xid:
+            headers["xid"] = self.otp_xid
+        headers["notifyType"] = notify_type
+        
+        _LOGGER.debug("Sending Hyundai OTP to %s", notify_type)
+        response = await self._post_request_with_logging_and_errors_raised(
+            url=url,
+            json_body={},
+            headers=headers,
+        )
+        return await response.json()
+
+    async def _verify_otp(self, otp_code: str) -> dict:
+        """Verify OTP code."""
+        url = HYUNDAI_LOGIN_API_BASE + "verifyOTP"
+        
+        headers = self._api_headers()
+        if self.otp_key:
+            headers["otpKey"] = self.otp_key
+        if self.otp_xid:
+            headers["xid"] = self.otp_xid
+        if self.notify_type:
+            headers["notifyType"] = self.notify_type
+        
+        response = await self._post_request_with_logging_and_errors_raised(
+            url=url,
+            json_body={"otp": otp_code},
+            headers=headers,
+        )
+        
+        response_json = await response.json()
+        _LOGGER.debug("Hyundai OTP verification response: %s", response_json)
+        
+        # Get tokens from headers
+        self.access_token = response.headers.get("accessToken")
+        self.session_id = response.headers.get("sid")
+        
+        return response_json
+
     async def login(self):
-        """Login to Hyundai BlueLink with username and password."""
+        """Login to Hyundai BlueLink.
+        
+        Tries direct OAuth login first. If OTP is required, handles the OTP flow.
+        """
+        # First, try the OAuth token endpoint (works for some accounts)
         url = HYUNDAI_LOGIN_API_BASE + "oauth/token"
         data = {"username": self.username, "password": self.password}
         
@@ -218,14 +284,60 @@ class UsHyundai:
         response_json = await response.json()
         _LOGGER.debug("Hyundai login response: %s", response_json)
         
-        if response_json.get("access_token") is None:
-            error_msg = response_json.get("errorMessage", "Unknown error")
-            raise AuthError(f"Hyundai login failed: {error_msg}")
+        # Check if we got an access token directly
+        if response_json.get("access_token"):
+            self.access_token = response_json["access_token"]
+            self.refresh_token = response_json.get("refresh_token")
+            _LOGGER.info("Hyundai BlueLink login successful (direct auth)")
+            return
         
-        self.access_token = response_json["access_token"]
-        self.refresh_token = response_json.get("refresh_token")
+        # Check if OTP is required
+        if "otpKey" in response_json or response_json.get("responseCode") == "OTP_REQUIRED":
+            _LOGGER.info("Hyundai account requires OTP authentication")
+            
+            if self.otp_callback is None:
+                raise AuthError("OTP required but no OTP callback provided. Please reconfigure with OTP support.")
+            
+            self.otp_key = response_json.get("otpKey", "")
+            self.otp_xid = response.headers.get("xid", "")
+            
+            # Get OTP destination from callback
+            ctx_choice = {
+                "stage": "choose_destination",
+                "hasEmail": True,
+                "hasPhone": True,
+                "email": response_json.get("email", ""),
+                "phone": response_json.get("phone", ""),
+            }
+            callback_response = await self.otp_callback(ctx_choice)
+            notify_type = str(callback_response.get("notify_type", "EMAIL")).upper()
+            
+            # Send OTP
+            await self._send_otp(notify_type)
+            
+            # Get OTP code from callback
+            ctx_code = {
+                "stage": "input_code",
+                "notify_type": notify_type,
+            }
+            otp_response = await self.otp_callback(ctx_code)
+            otp_code = str(otp_response.get("otp_code", "")).strip()
+            
+            if not otp_code:
+                raise AuthError("OTP code required")
+            
+            # Verify OTP
+            await self._verify_otp(otp_code)
+            
+            if not self.access_token and not self.session_id:
+                raise AuthError("OTP verification failed - no token received")
+            
+            _LOGGER.info("Hyundai BlueLink login successful (OTP auth)")
+            return
         
-        _LOGGER.info("Hyundai BlueLink login successful")
+        # Login failed
+        error_msg = response_json.get("errorMessage", response_json.get("message", "Unknown error"))
+        raise AuthError(f"Hyundai login failed: {error_msg}")
 
     async def get_vehicles(self):
         """Get list of vehicles for the account."""
