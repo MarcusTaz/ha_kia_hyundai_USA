@@ -32,7 +32,7 @@ from .const import (
     GENESIS_API_URL_BASE,
     SeatSettings,
 )
-from .util_http import request_with_logging, request_with_active_session
+from .util_http import request_with_logging_bluelink, request_with_active_session
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -174,7 +174,7 @@ class UsGenesis:
         headers["vin"] = vehicle.get("vin", vehicle.get("VIN", ""))
         return headers
 
-    @request_with_logging
+    @request_with_logging_bluelink
     async def _post_request_with_logging_and_errors_raised(
             self,
             url: str,
@@ -190,7 +190,7 @@ class UsGenesis:
             ssl=await self.get_ssl_context()
         )
 
-    @request_with_logging
+    @request_with_logging_bluelink
     async def _get_request_with_logging_and_errors_raised(
             self,
             url: str,
