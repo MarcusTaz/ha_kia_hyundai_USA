@@ -24,8 +24,8 @@ HYUNDAI_API_URL_HOST = "api.telematics.hyundaiusa.com"
 HYUNDAI_LOGIN_API_BASE = "https://" + HYUNDAI_API_URL_HOST + "/v2/ac/"
 HYUNDAI_API_URL_BASE = "https://" + HYUNDAI_API_URL_HOST + "/ac/v2/"
 
-# Genesis USA API (connected services)
-GENESIS_API_URL_HOST = "api.telematics.genesis.com"
+# Genesis USA API (uses Hyundai infrastructure with different brand indicator)
+GENESIS_API_URL_HOST = "api.telematics.hyundaiusa.com"
 GENESIS_LOGIN_API_BASE = "https://" + GENESIS_API_URL_HOST + "/v2/ac/"
 GENESIS_API_URL_BASE = "https://" + GENESIS_API_URL_HOST + "/ac/v2/"
 

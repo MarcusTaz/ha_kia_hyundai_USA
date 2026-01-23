@@ -153,7 +153,7 @@ class UsGenesis:
             "refresh": "false",
             "encryptFlag": "false",
             "brandIndicator": "G",  # Genesis brand indicator
-            "client_id": "m66129Bb-em93-SPAGEN-bZ91-am4540zp19920",  # Genesis client ID
+            "client_id": "m66129Bb-em93-SPAHYN-bZ91-am4540zp19920",  # Uses Hyundai client ID
             "clientSecret": "v558o935-6nne-423i-baa8",
         }
         return headers
