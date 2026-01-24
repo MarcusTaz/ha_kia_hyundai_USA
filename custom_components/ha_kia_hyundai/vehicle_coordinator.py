@@ -92,10 +92,22 @@ class VehicleCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug("Waiting for action to complete")
                 await sleep(DELAY_BETWEEN_ACTION_IN_PROGRESS_CHECKING)
 
-            # Get cached vehicle status
-            new_data = await self.api_connection.get_cached_vehicle_status(
-                vehicle_id=vehicle_id
-            )
+            # Get cached vehicle status - handle temporary API errors gracefully
+            try:
+                new_data = await self.api_connection.get_cached_vehicle_status(
+                    vehicle_id=vehicle_id
+                )
+            except ClientError as err:
+                # API temporarily unavailable (common after remote commands)
+                # Return existing data if available to prevent going unavailable
+                if self.data is not None:
+                    _LOGGER.warning(
+                        "Temporary API error during refresh, using cached data: %s", err
+                    )
+                    return self.data
+                else:
+                    # No cached data available, must raise the error
+                    raise
 
             # Sort target SOC by plug type if present
             target_soc = safely_get_json_value(
