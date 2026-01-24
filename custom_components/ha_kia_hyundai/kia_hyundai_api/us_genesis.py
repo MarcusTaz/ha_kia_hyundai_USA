@@ -443,38 +443,42 @@ class UsGenesis:
 
     async def lock(self, vehicle_id: str):
         """Lock the vehicle."""
+        _LOGGER.info("===== GENESIS LOCK CALLED =====")
         if self.access_token is None:
             await self.login()
         
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
-        headers["APPCLOUD-VIN"] = vehicle.get("vin", "")
         
         url = GENESIS_API_URL_BASE + "rcs/rdo/off"
-        data = {"userName": self.username, "vin": vehicle.get("vin")}
+        _LOGGER.debug("Genesis lock URL: %s", url)
+        _LOGGER.debug("Genesis lock headers: %s", {k: v for k, v in headers.items() if k.lower() not in ['accesstoken', 'bluelinkservicepin']})
         
+        # BlueLink API expects empty body for lock/unlock
         response = await self._post_request_with_logging_and_errors_raised(
             url=url,
-            json_body=data,
+            json_body={},
             headers=headers,
         )
         _LOGGER.debug("Genesis lock response: %s", await response.text())
 
     async def unlock(self, vehicle_id: str):
         """Unlock the vehicle."""
+        _LOGGER.info("===== GENESIS UNLOCK CALLED =====")
         if self.access_token is None:
             await self.login()
         
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
-        headers["APPCLOUD-VIN"] = vehicle.get("vin", "")
         
         url = GENESIS_API_URL_BASE + "rcs/rdo/on"
-        data = {"userName": self.username, "vin": vehicle.get("vin")}
+        _LOGGER.debug("Genesis unlock URL: %s", url)
+        _LOGGER.debug("Genesis unlock headers: %s", {k: v for k, v in headers.items() if k.lower() not in ['accesstoken', 'bluelinkservicepin']})
         
+        # BlueLink API expects empty body for lock/unlock
         response = await self._post_request_with_logging_and_errors_raised(
             url=url,
-            json_body=data,
+            json_body={},
             headers=headers,
         )
         _LOGGER.debug("Genesis unlock response: %s", await response.text())
