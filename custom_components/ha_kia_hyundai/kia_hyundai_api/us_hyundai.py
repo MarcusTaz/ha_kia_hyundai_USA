@@ -364,6 +364,10 @@ class UsHyundai:
                 },
                 "vehicleFeature": {
                     "remoteFeature": {
+                        "lock": "1",
+                        "unlock": "1",
+                        "start": "3",
+                        "stop": "1",
                         "heatedSteeringWheel": "1" if vehicle_status.get("steerWheelHeat") is not None else "0",
                         "heatedSeat": "1",
                         "ventSeat": "1" if vehicle.get("evStatus") == "E" else "0",
