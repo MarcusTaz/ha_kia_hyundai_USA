@@ -45,12 +45,12 @@ class VehicleCoordinator(DataUpdateCoordinator):
     # Desired climate settings (set by UI before starting climate)
     climate_desired_defrost: bool = False
     climate_desired_heating_acc: bool = False
-    desired_steering_wheel_heat: int = 0  # 0=off, 1=low, 2=high
+    desired_temperature: int = 72  # Default temperature in Fahrenheit
+    desired_steering_wheel_heat: int = 0  # 0=off, 1=low/on, 2=high
     desired_driver_seat_comfort: SeatSettings | None = None
     desired_passenger_seat_comfort: SeatSettings | None = None
     desired_left_rear_seat_comfort: SeatSettings | None = None
     desired_right_rear_seat_comfort: SeatSettings | None = None
-    desired_steering_wheel_heat: int = 0  # 0=off, 1=low/on, 2=high (UI preference only for now)
 
     def __init__(
         self,
