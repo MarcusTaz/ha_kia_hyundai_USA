@@ -319,10 +319,16 @@ class UsGenesis:
         # Parse seat configurations from API
         # seatLocationID: 1=driver, 2=passenger, 3=rear left, 4=rear right
         seat_config_map = {}
+        has_heated_seats = False
+        has_ventilated_seats = False
         for seat in seat_configs:
             location_id = seat.get("seatLocationID", "")
             heat_capable = seat.get("heatingCapable", "NO") == "YES"
             vent_capable = seat.get("ventCapable", "NO") == "YES"
+            if heat_capable:
+                has_heated_seats = True
+            if vent_capable:
+                has_ventilated_seats = True
             # Determine heatVentType: 0=none, 1=heat only, 2=vent only, 3=heat+vent
             if heat_capable and vent_capable:
                 heat_vent_type = 3
@@ -334,10 +340,23 @@ class UsGenesis:
                 heat_vent_type = 0
             # Parse supported levels to determine step count
             levels = seat.get("supportedLevels", "")
-            heat_vent_step = len(levels.split(",")) if levels else 3
+            heat_vent_step = len(levels.split(",")) if levels else 0
             seat_config_map[location_id] = {"heatVentType": heat_vent_type, "heatVentStep": heat_vent_step}
         
         _LOGGER.debug("Genesis seat configurations from API: %s", seat_config_map)
+        
+        # Parse vehicle capabilities from API
+        steering_wheel_heat_capable = vehicle_details.get("steeringWheelHeatCapable", "NO") == "YES"
+        side_mirror_heat_capable = vehicle_details.get("sideMirrorHeatCapable", "NO") == "YES"
+        rear_window_heat_capable = vehicle_details.get("rearWindowHeatCapable", "NO") == "YES"
+        fatc_available = vehicle_details.get("fatcAvailable", "N") == "Y"  # Remote climate/start
+        bluelink_enabled = vehicle_details.get("bluelinkEnabled", False)
+        
+        _LOGGER.debug(
+            "Genesis vehicle capabilities: steering_heat=%s, mirror_heat=%s, rear_window=%s, fatc=%s, bluelink=%s",
+            steering_wheel_heat_capable, side_mirror_heat_capable, rear_window_heat_capable, 
+            fatc_available, bluelink_enabled
+        )
         
         # Get location
         location = None
@@ -372,14 +391,16 @@ class UsGenesis:
                 },
                 "vehicleFeature": {
                     "remoteFeature": {
-                        "lock": "1",
-                        "unlock": "1",
-                        "start": "3",
-                        "stop": "1",
-                        "heatedSteeringWheel": "1" if vehicle_status.get("steerWheelHeat") is not None else "0",
-                        "heatedSeat": "1",
-                        "ventSeat": "1" if vehicle.get("evStatus") == "E" else "0",
-                        "steeringWheelStepLevel": "1",
+                        "lock": "1" if bluelink_enabled else "0",
+                        "unlock": "1" if bluelink_enabled else "0",
+                        "start": "3" if fatc_available else "0",
+                        "stop": "1" if fatc_available else "0",
+                        "heatedSteeringWheel": "1" if steering_wheel_heat_capable else "0",
+                        "heatedSideMirror": "1" if side_mirror_heat_capable else "0",
+                        "heatedRearWindow": "1" if rear_window_heat_capable else "0",
+                        "heatedSeat": "1" if has_heated_seats else "0",
+                        "ventSeat": "1" if has_ventilated_seats else "0",
+                        "steeringWheelStepLevel": "1",  # Genesis typically has on/off only
                     },
                 },
                 "heatVentSeat": {
