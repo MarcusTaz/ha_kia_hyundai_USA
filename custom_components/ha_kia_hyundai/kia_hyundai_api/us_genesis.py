@@ -33,26 +33,38 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _seat_settings_genesis(level: SeatSettings | None) -> int:
-    """Convert seat setting to Genesis API value (same as Hyundai)."""
+    """Convert seat setting to Genesis/Hyundai BlueLink API value.
+    
+    Based on API supportedLevels '2,6,7,8,3,4,5':
+    - 0: Off
+    - 1, 2, 3: Heat levels (Low, Medium, High)
+    - 6, 7, 8: Cool/Vent levels (Low, Medium, High)
+    """
     if level is None:
         return 0
     
     level_value = level.value if hasattr(level, 'value') else level
+    _LOGGER.debug("_seat_settings_genesis: input level=%s, value=%s", level, level_value)
     
+    # SeatSettings enum: NONE=0, CoolLow=1, CoolMedium=2, CoolHigh=3, HeatLow=4, HeatMedium=5, HeatHigh=6
+    result = 0
     if level_value == 6:  # HeatHigh
-        return 3
+        result = 3
     elif level_value == 5:  # HeatMedium
-        return 2
+        result = 2
     elif level_value == 4:  # HeatLow
-        return 1
+        result = 1
     elif level_value == 3:  # CoolHigh
-        return 3
+        result = 8  # API uses 8 for cool high
     elif level_value == 2:  # CoolMedium
-        return 2
+        result = 7  # API uses 7 for cool medium
     elif level_value == 1:  # CoolLow
-        return 1
+        result = 6  # API uses 6 for cool low
     else:  # NONE (0) or unknown
-        return 0
+        result = 0
+    
+    _LOGGER.debug("_seat_settings_genesis: output value=%s", result)
+    return result
 
 
 class UsGenesis:
