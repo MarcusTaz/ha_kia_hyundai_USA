@@ -19,12 +19,11 @@
       },
       "bluelink_credentials": {
         "title": "{brand} Credentials",
-        "description": "Enter your {brand} BlueLink/Connected Services credentials, PIN, and preferred OTP method (if your account requires verification).",
+        "description": "Enter your {brand} BlueLink/Connected Services credentials and PIN.",
         "data": {
           "username": "Email",
           "password": "Password",
-          "pin": "4-Digit PIN",
-          "otp_type": "OTP Method (if required)"
+          "pin": "4-Digit PIN"
         }
       },
       "otp_code": {
