@@ -325,10 +325,35 @@ class UsHyundai:
         
         # Find this vehicle's details
         vehicle_details = {}
+        seat_configs = []
         for entry in details_json.get("enrolledVehicleDetails", []):
             if entry.get("vehicleDetails", {}).get("regid") == vehicle_id:
                 vehicle_details = entry.get("vehicleDetails", {})
+                seat_configs = vehicle_details.get("seatConfigurations", {}).get("seatConfigs", [])
                 break
+        
+        # Parse seat configurations from API
+        # seatLocationID: 1=driver, 2=passenger, 3=rear left, 4=rear right
+        seat_config_map = {}
+        for seat in seat_configs:
+            location_id = seat.get("seatLocationID", "")
+            heat_capable = seat.get("heatingCapable", "NO") == "YES"
+            vent_capable = seat.get("ventCapable", "NO") == "YES"
+            # Determine heatVentType: 0=none, 1=heat only, 2=vent only, 3=heat+vent
+            if heat_capable and vent_capable:
+                heat_vent_type = 3
+            elif heat_capable:
+                heat_vent_type = 1
+            elif vent_capable:
+                heat_vent_type = 2
+            else:
+                heat_vent_type = 0
+            # Parse supported levels to determine step count
+            levels = seat.get("supportedLevels", "")
+            heat_vent_step = len(levels.split(",")) if levels else 3
+            seat_config_map[location_id] = {"heatVentType": heat_vent_type, "heatVentStep": heat_vent_step}
+        
+        _LOGGER.debug("Hyundai seat configurations from API: %s", seat_config_map)
         
         # Get location
         location = None
@@ -375,10 +400,10 @@ class UsHyundai:
                     },
                 },
                 "heatVentSeat": {
-                    "driverSeat": {"heatVentType": 3, "heatVentStep": 3},
-                    "passengerSeat": {"heatVentType": 3, "heatVentStep": 3},
-                    "rearLeftSeat": {"heatVentType": 1, "heatVentStep": 2},
-                    "rearRightSeat": {"heatVentType": 1, "heatVentStep": 2},
+                    "driverSeat": seat_config_map.get("1", {"heatVentType": 0, "heatVentStep": 0}),
+                    "passengerSeat": seat_config_map.get("2", {"heatVentType": 0, "heatVentStep": 0}),
+                    "rearLeftSeat": seat_config_map.get("3", {"heatVentType": 0, "heatVentStep": 0}),
+                    "rearRightSeat": seat_config_map.get("4", {"heatVentType": 0, "heatVentStep": 0}),
                 },
             },
             "lastVehicleInfo": {
