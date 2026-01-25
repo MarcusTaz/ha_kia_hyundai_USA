@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from . import VehicleCoordinator
+from . import VehicleCoordinator, get_all_coordinators
 from .const import DOMAIN
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
@@ -18,18 +18,19 @@ PARALLEL_UPDATES: int = 1
 async def async_setup_entry(
     hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
-    vehicle_id = config_entry.unique_id
-    coordinator: VehicleCoordinator = hass.data[DOMAIN][vehicle_id]
+    coordinators = get_all_coordinators(hass)
 
-    switches: [SwitchEntity] = [
-        ChargingSwitch(coordinator=coordinator),
-    ]
-    if coordinator.can_remote_climate:
-        _LOGGER.debug("Adding climate related switch entities")
-        switches.append(ClimateDesiredDefrostSwitch(coordinator=coordinator))
-        switches.append(ClimateDesiredHeatingAccSwitch(coordinator=coordinator))
-    else:
-        _LOGGER.debug("skipping climate related switch entities")
+    switches: list[SwitchEntity] = []
+    for coordinator in coordinators.values():
+        switches.append(ChargingSwitch(coordinator=coordinator))
+        
+        if coordinator.can_remote_climate:
+            _LOGGER.debug("Adding climate related switch entities for %s", coordinator.vehicle_name)
+            switches.append(ClimateDesiredDefrostSwitch(coordinator=coordinator))
+            switches.append(ClimateDesiredHeatingAccSwitch(coordinator=coordinator))
+        else:
+            _LOGGER.debug("Skipping climate related switch entities for %s", coordinator.vehicle_name)
+    
     async_add_entities(switches)
 
 
@@ -40,7 +41,7 @@ class ClimateDesiredDefrostSwitch(VehicleCoordinatorBaseEntity, SwitchEntity, Re
     ):
         super().__init__(coordinator, SwitchEntityDescription(
             key="climate_desired_defrost",
-            name="Climate Desired Defrost",
+            name="Front Defrost with Climate",
             icon="mdi:car-defrost-front",
             device_class=SwitchDeviceClass.SWITCH,
         ))
@@ -78,8 +79,8 @@ class ClimateDesiredHeatingAccSwitch(VehicleCoordinatorBaseEntity, SwitchEntity,
     ):
         super().__init__(coordinator, SwitchEntityDescription(
             key="climate_desired_heating_acc",
-            name="Climate Desired Heating Acc",
-            icon="mdi:steering",
+            name="Rear Defrost with Climate",
+            icon="mdi:car-defrost-rear",
             device_class=SwitchDeviceClass.SWITCH,
         ))
 

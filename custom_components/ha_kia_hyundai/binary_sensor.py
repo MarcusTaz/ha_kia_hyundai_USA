@@ -8,11 +8,8 @@ from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySen
     BinarySensorDeviceClass
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import VehicleCoordinator
-from .const import (
-    DOMAIN,
-    CONF_VEHICLE_ID,
-)
+from . import VehicleCoordinator, get_all_coordinators
+from .const import DOMAIN
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 _LOGGER = getLogger(__name__)
@@ -138,18 +135,18 @@ BINARY_SENSOR_DESCRIPTIONS: Final[tuple[KiaBinarySensorEntityDescription, ...]] 
 async def async_setup_entry(
     hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
-    vehicle_id = config_entry.data[CONF_VEHICLE_ID]
-    coordinator: VehicleCoordinator = hass.data[DOMAIN][vehicle_id]
+    coordinators = get_all_coordinators(hass)
 
     binary_sensors = []
-    for description in BINARY_SENSOR_DESCRIPTIONS:
-        if getattr(coordinator, description.key) is not None:
-            binary_sensors.append(
-                InstrumentSensor(
-                    coordinator=coordinator,
-                    description=description,
+    for coordinator in coordinators.values():
+        for description in BINARY_SENSOR_DESCRIPTIONS:
+            if getattr(coordinator, description.key) is not None:
+                binary_sensors.append(
+                    InstrumentSensor(
+                        coordinator=coordinator,
+                        description=description,
+                    )
                 )
-            )
     async_add_entities(binary_sensors)
 
 

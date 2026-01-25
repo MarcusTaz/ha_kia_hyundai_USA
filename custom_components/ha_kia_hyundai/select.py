@@ -1,5 +1,6 @@
-"""Select entity for seats."""
+"""Select entity for seats and steering wheel."""
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final
@@ -11,9 +12,26 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from . import VehicleCoordinator
-from .const import CONF_VEHICLE_ID, DOMAIN, SEAT_STATUS, STR_TO_ENUM
+from . import VehicleCoordinator, get_all_coordinators
+from .const import DOMAIN, SEAT_STATUS, STR_TO_SEAT_SETTING
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
+
+_LOGGER = logging.getLogger(__name__)
+
+# Steering wheel options based on step level from vehicle config
+# steeringWheelStepLevel: 1 = on/off only, 2 = off/low/high
+STEERING_WHEEL_OPTIONS = {
+    1: ["Off", "On"],
+    2: ["Off", "Low", "High"],
+}
+
+# Map steering wheel option strings to API values
+STEERING_WHEEL_STR_TO_VALUE = {
+    "Off": 0,
+    "On": 1,
+    "Low": 1,
+    "High": 2,
+}
 
 OFF = ["Off"]
 HEAT_OPTIONS = {
@@ -43,29 +61,29 @@ SEAT_SELECTIONS: Final[tuple[KiaSelectEntityDescription, ...]] = (
     KiaSelectEntityDescription(
         key="desired_driver_seat_comfort",
         name="Seat-Driver with Climate",
-        exists_fn=lambda coordinator: bool(coordinator.front_seat_options[HEAT_TYPE]),
-        value_fn=lambda coordinator: SEAT_STATUS[coordinator.climate_driver_seat],
+        exists_fn=lambda coordinator: True,  # Existence checked by has_climate_seats
+        value_fn=lambda coordinator: SEAT_STATUS.get(coordinator.climate_driver_seat, "Off"),
         options_fn=lambda coordinator: coordinator.front_seat_options,
     ),
     KiaSelectEntityDescription(
         key="desired_passenger_seat_comfort",
         name="Seat-Passenger with Climate",
-        exists_fn=lambda coordinator: bool(coordinator.front_seat_options[HEAT_TYPE]),
-        value_fn=lambda coordinator: SEAT_STATUS[coordinator.climate_passenger_seat],
+        exists_fn=lambda coordinator: True,  # Existence checked by has_climate_seats
+        value_fn=lambda coordinator: SEAT_STATUS.get(coordinator.climate_passenger_seat, "Off"),
         options_fn=lambda coordinator: coordinator.front_seat_options,
     ),
     KiaSelectEntityDescription(
         key="desired_left_rear_seat_comfort",
         name="Seat-Left Rear with Climate",
-        exists_fn=lambda coordinator: bool(coordinator.rear_seat_options[HEAT_TYPE]),
-        value_fn=lambda coordinator: SEAT_STATUS[coordinator.climate_left_rear_seat],
+        exists_fn=lambda coordinator: bool(coordinator.rear_seat_options.get(HEAT_TYPE, 0)),  # Rear seats may not exist
+        value_fn=lambda coordinator: SEAT_STATUS.get(coordinator.climate_left_rear_seat, "Off"),
         options_fn=lambda coordinator: coordinator.rear_seat_options,
     ),
     KiaSelectEntityDescription(
         key="desired_right_rear_seat_comfort",
         name="Seat-Right Rear with Climate",
-        exists_fn=lambda coordinator: bool(coordinator.rear_seat_options[HEAT_TYPE]),
-        value_fn=lambda coordinator: SEAT_STATUS[coordinator.climate_right_rear_seat],
+        exists_fn=lambda coordinator: bool(coordinator.rear_seat_options.get(HEAT_TYPE, 0)),  # Rear seats may not exist
+        value_fn=lambda coordinator: SEAT_STATUS.get(coordinator.climate_right_rear_seat, "Off"),
         options_fn=lambda coordinator: coordinator.rear_seat_options,
     ),
 )
@@ -77,15 +95,22 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the entity."""
-    vehicle_id = config_entry.data[CONF_VEHICLE_ID]
-    coordinator: VehicleCoordinator = hass.data[DOMAIN][vehicle_id]
+    coordinators = get_all_coordinators(hass)
 
-    async_add_entities(
-        SeatSelect(coordinator, select_description)
-        for select_description in SEAT_SELECTIONS
-        if coordinator.has_climate_seats
-        if select_description.exists_fn(coordinator)
-    )
+    entities = []
+    for coordinator in coordinators.values():
+        # Add steering wheel heat select first (appears under rear defrost)
+        if coordinator.steering_wheel_heat_supported:
+            entities.append(SteeringWheelHeatSelect(coordinator))
+        # Add seat selects after steering wheel
+        entities.extend(
+            SeatSelect(coordinator, select_description)
+            for select_description in SEAT_SELECTIONS
+            if coordinator.has_climate_seats
+            if select_description.exists_fn(coordinator)
+        )
+    
+    async_add_entities(entities)
 
 
 class SeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
@@ -97,17 +122,21 @@ class SeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
     def options(self) -> list[str]:
         """Return the available options."""
         installed_options = self.entity_description.options_fn(self.coordinator)
-        if installed_options:
-            if installed_options[HEAT_TYPE] == 3:
-                return (
-                    OFF
-                    + HEAT_OPTIONS[installed_options[STEPS]]
-                    + COOL_OPTIONS[installed_options[STEPS]]
-                )
-            if installed_options[HEAT_TYPE] == 2:
-                return OFF + COOL_OPTIONS[installed_options[STEPS]]
-            return OFF + HEAT_OPTIONS[installed_options[STEPS]]
-        return OFF
+        heat_type = installed_options.get(HEAT_TYPE, 0) if installed_options else 0
+        steps = installed_options.get(STEPS, 3) if installed_options else 3  # Default to 3 levels
+        
+        # If heat_type is 0 or unknown, default to showing all options (heat + cool with 3 levels)
+        if heat_type == 3 or heat_type == 0:
+            # Both heat and cool, or unknown - show all options
+            return OFF + HEAT_OPTIONS.get(steps, HEAT_OPTIONS[3]) + COOL_OPTIONS.get(steps, COOL_OPTIONS[3])
+        if heat_type == 2:
+            # Cool only
+            return OFF + COOL_OPTIONS.get(steps, COOL_OPTIONS[3])
+        if heat_type == 1:
+            # Heat only
+            return OFF + HEAT_OPTIONS.get(steps, HEAT_OPTIONS[3])
+        # Fallback - show all options
+        return OFF + HEAT_OPTIONS[3] + COOL_OPTIONS[3]
 
     @property
     def available(self) -> bool:
@@ -116,11 +145,21 @@ class SeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
 
     async def async_select_option(self, option: str) -> None:
         """Change the select option."""
+        _LOGGER.info(
+            "SEAT SELECT: Setting %s to %s (SeatSettings=%s) on coordinator for %s",
+            self.entity_description.key,
+            option,
+            STR_TO_SEAT_SETTING.get(option),
+            self.coordinator.vehicle_name,
+        )
         setattr(
             self.coordinator,
             self.entity_description.key,
-            STR_TO_ENUM[option],
+            STR_TO_SEAT_SETTING[option],
         )
+        # Verify it was set
+        new_value = getattr(self.coordinator, self.entity_description.key, "NOT FOUND")
+        _LOGGER.info("SEAT SELECT: Verified value is now: %s", new_value)
         self._attr_current_option = option
         self.async_write_ha_state()
 
@@ -141,5 +180,74 @@ class SeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
         setattr(
             self.coordinator,
             self.entity_description.key,
-            STR_TO_ENUM[self._attr_current_option or "Off"],
+            STR_TO_SEAT_SETTING[self._attr_current_option or "Off"],
+        )
+
+
+class SteeringWheelHeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
+    """Select entity for steering wheel heat level.
+    
+    Note: The API currently only supports on/off (0/1) for steeringWheel.
+    This UI allows selecting the desired level, but until the correct API
+    format is determined, the actual command will use the heating toggle.
+    """
+
+    def __init__(self, coordinator: VehicleCoordinator):
+        """Initialize steering wheel heat select."""
+        super().__init__(coordinator, SelectEntityDescription(
+            key="climate_steering_wheel_heat",
+            name="Steering Wheel Heat with Climate",
+            icon="mdi:steering",
+        ))
+
+    @property
+    def options(self) -> list[str]:
+        """Return the available options based on step level."""
+        step_level = self.coordinator.steering_wheel_heat_step_level
+        return STEERING_WHEEL_OPTIONS.get(step_level, STEERING_WHEEL_OPTIONS[2])
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the current option."""
+        return self._attr_current_option
+
+    @property
+    def available(self) -> bool:
+        """Return if the selector is available."""
+        return super().available
+
+    async def async_select_option(self, option: str) -> None:
+        """Change the select option."""
+        _LOGGER.info(
+            "STEERING WHEEL: Setting to %s (value=%s) on coordinator for %s",
+            option,
+            STEERING_WHEEL_STR_TO_VALUE.get(option, 0),
+            self.coordinator.vehicle_name,
+        )
+        self.coordinator.desired_steering_wheel_heat = STEERING_WHEEL_STR_TO_VALUE.get(option, 0)
+        _LOGGER.info("STEERING WHEEL: Verified value is now: %s", self.coordinator.desired_steering_wheel_heat)
+        self._attr_current_option = option
+        self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        """Restore previous state when added to Hass."""
+        await super().async_added_to_hass()
+        previous_state = await self.async_get_last_state()
+        if previous_state is not None and previous_state.state not in (
+            STATE_UNKNOWN,
+            STATE_UNAVAILABLE,
+        ):
+            self._attr_current_option = previous_state.state
+        else:
+            # Default based on current steering wheel status
+            current_value = self.coordinator.climate_steering_wheel
+            if current_value == 2:
+                self._attr_current_option = "High"
+            elif current_value == 1:
+                self._attr_current_option = "Low" if self.coordinator.steering_wheel_heat_step_level == 2 else "On"
+            else:
+                self._attr_current_option = "Off"
+
+        self.coordinator.desired_steering_wheel_heat = STEERING_WHEEL_STR_TO_VALUE.get(
+            self._attr_current_option or "Off", 0
         )

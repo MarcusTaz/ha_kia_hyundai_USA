@@ -18,10 +18,9 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import VehicleCoordinator
+from . import VehicleCoordinator, get_all_coordinators
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 from .const import (
-    CONF_VEHICLE_ID,
     DOMAIN,
     TEMPERATURE_MIN,
     TEMPERATURE_MAX,
@@ -38,13 +37,17 @@ SUPPORT_FLAGS = (
 async def async_setup_entry(
     hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
-    vehicle_id = config_entry.data[CONF_VEHICLE_ID]
-    coordinator: VehicleCoordinator = hass.data[DOMAIN][vehicle_id]
-    if coordinator.can_remote_climate:
-        _LOGGER.debug("Adding climate entity")
-        async_add_entities([Thermostat(coordinator)])
-    else:
-        _LOGGER.debug("Skipping climate entity, can not remote start?")
+    coordinators = get_all_coordinators(hass)
+    
+    entities = []
+    for coordinator in coordinators.values():
+        if coordinator.can_remote_climate:
+            _LOGGER.debug("Adding climate entity for %s", coordinator.vehicle_name)
+            entities.append(Thermostat(coordinator))
+        else:
+            _LOGGER.debug("Skipping climate entity for %s, can not remote start?", coordinator.vehicle_name)
+    
+    async_add_entities(entities)
 
 
 class Thermostat(VehicleCoordinatorBaseEntity, ClimateEntity):
@@ -79,7 +82,22 @@ class Thermostat(VehicleCoordinatorBaseEntity, ClimateEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Update hvac mode."""
-        _LOGGER.debug(f"set_hvac_mode; hvac_mode:{hvac_mode}")
+        _LOGGER.info("===== CLIMATE SET_HVAC_MODE CALLED =====")
+        _LOGGER.info(f"set_hvac_mode called with hvac_mode: {hvac_mode}")
+        _LOGGER.info(
+            "Coordinator seat settings: driver=%s, passenger=%s, left_rear=%s, right_rear=%s",
+            self.coordinator.desired_driver_seat_comfort,
+            self.coordinator.desired_passenger_seat_comfort,
+            self.coordinator.desired_left_rear_seat_comfort,
+            self.coordinator.desired_right_rear_seat_comfort,
+        )
+        _LOGGER.info(
+            "Coordinator other settings: defrost=%s, heating_acc=%s, steering_wheel=%s, temp=%s",
+            self.coordinator.climate_desired_defrost,
+            self.coordinator.climate_desired_heating_acc,
+            self.coordinator.desired_steering_wheel_heat,
+            self.target_temperature,
+        )
         match hvac_mode.strip().lower():
             case HVACMode.OFF:
                 await self.coordinator.api_connection.stop_climate(vehicle_id=self.coordinator.vehicle_id)
@@ -90,6 +108,7 @@ class Thermostat(VehicleCoordinatorBaseEntity, ClimateEntity):
                     set_temp=int(self.target_temperature),
                     defrost=self.coordinator.climate_desired_defrost,
                     heating=self.coordinator.climate_desired_heating_acc,
+                    steering_wheel_heat=self.coordinator.desired_steering_wheel_heat,
                     driver_seat=self.coordinator.desired_driver_seat_comfort,
                     passenger_seat=self.coordinator.desired_passenger_seat_comfort,
                     left_rear_seat=self.coordinator.desired_left_rear_seat_comfort,
