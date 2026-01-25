@@ -36,38 +36,80 @@ from .util_http import request_with_logging_bluelink, request_with_active_sessio
 _LOGGER = logging.getLogger(__name__)
 
 
-def _seat_settings_hyundai(level: SeatSettings | None) -> int:
+def _parse_supported_levels(supported_levels_str: str) -> dict:
+    """Parse supportedLevels string from API and build seat setting mapping.
+    
+    The API returns supportedLevels like '2,6,7,8,3,4,5'.
+    Based on testing, the pattern is:
+    - Lowest value = Off
+    - Next 3 lower values = Cool (Low, Medium, High)
+    - Next 3 higher values = Heat (Low, Medium, High)
+    
+    Returns a dict mapping our SeatSettings enum values to API values.
+    """
+    if not supported_levels_str:
+        # Default mapping if no levels provided
+        return {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6}
+    
+    # Parse and sort the levels
+    levels = sorted([int(x.strip()) for x in supported_levels_str.split(",") if x.strip()])
+    _LOGGER.debug("Parsed supportedLevels: %s", levels)
+    
+    if len(levels) < 7:
+        # Not enough levels for full heat+cool, use simple mapping
+        mapping = {0: levels[0] if levels else 0}  # Off
+        for i, val in enumerate(levels[1:], 1):
+            if i <= 6:
+                mapping[i] = val
+        return mapping
+    
+    # Build mapping from sorted levels:
+    # levels[0] = Off
+    # levels[1:4] = Cool (Low, Medium, High)
+    # levels[4:7] = Heat (Low, Medium, High)
+    mapping = {
+        0: levels[0],  # NONE/Off
+        1: levels[1],  # CoolLow
+        2: levels[2],  # CoolMedium
+        3: levels[3],  # CoolHigh
+        4: levels[4],  # HeatLow
+        5: levels[5],  # HeatMedium
+        6: levels[6],  # HeatHigh
+    }
+    _LOGGER.debug("Built seat settings mapping from API: %s", mapping)
+    return mapping
+
+
+# Global cache for seat level mappings per vehicle
+_seat_level_mappings: dict[str, dict] = {}
+
+
+def _seat_settings_hyundai(level: SeatSettings | None, vehicle_id: str = "") -> int:
     """Convert seat setting to Hyundai BlueLink API value.
     
-    Based on API supportedLevels '2,6,7,8,3,4,5' and live testing:
-    - 2: Off
-    - 3, 4, 5: Cool/Vent levels (Low, Medium, High)
-    - 6, 7, 8: Heat levels (Low, Medium, High)
+    Uses the supportedLevels from the API to determine correct values.
     """
     if level is None:
-        return 2  # Off
+        # Get Off value from mapping or default to 2
+        mapping = _seat_level_mappings.get(vehicle_id, {})
+        return mapping.get(0, 2)
     
     level_value = level.value if hasattr(level, 'value') else level
-    _LOGGER.debug("_seat_settings_hyundai: input level=%s, value=%s", level, level_value)
+    _LOGGER.debug("_seat_settings_hyundai: input level=%s, value=%s, vehicle=%s", level, level_value, vehicle_id)
     
-    # SeatSettings enum: NONE=0, CoolLow=1, CoolMedium=2, CoolHigh=3, HeatLow=4, HeatMedium=5, HeatHigh=6
-    result = 2  # Default to Off
-    if level_value == 6:  # HeatHigh
-        result = 8
-    elif level_value == 5:  # HeatMedium
-        result = 7
-    elif level_value == 4:  # HeatLow
-        result = 6
-    elif level_value == 3:  # CoolHigh
-        result = 5
-    elif level_value == 2:  # CoolMedium
-        result = 4
-    elif level_value == 1:  # CoolLow
-        result = 3
-    elif level_value == 0:  # NONE/Off
-        result = 2
+    # Get mapping for this vehicle, or use default
+    mapping = _seat_level_mappings.get(vehicle_id, {
+        0: 2,  # Off
+        1: 3,  # CoolLow
+        2: 4,  # CoolMedium
+        3: 5,  # CoolHigh
+        4: 6,  # HeatLow
+        5: 7,  # HeatMedium
+        6: 8,  # HeatHigh
+    })
     
-    _LOGGER.debug("_seat_settings_hyundai: output value=%s", result)
+    result = mapping.get(level_value, mapping.get(0, 2))
+    _LOGGER.debug("_seat_settings_hyundai: output value=%s (from mapping: %s)", result, mapping)
     return result
 
 
@@ -343,6 +385,7 @@ class UsHyundai:
         seat_config_map = {}
         has_heated_seats = False
         has_ventilated_seats = False
+        seat_level_mapping = None
         for seat in seat_configs:
             location_id = seat.get("seatLocationID", "")
             heat_capable = seat.get("heatingCapable", "NO") == "YES"
@@ -360,10 +403,20 @@ class UsHyundai:
                 heat_vent_type = 2
             else:
                 heat_vent_type = 0
-            # Parse supported levels to determine step count
-            levels = seat.get("supportedLevels", "")
-            heat_vent_step = len(levels.split(",")) if levels else 0
+            # Parse supported levels from API
+            levels_str = seat.get("supportedLevels", "")
+            levels_list = [x.strip() for x in levels_str.split(",") if x.strip()]
+            heat_vent_step = len(levels_list) if levels_list else 0
             seat_config_map[location_id] = {"heatVentType": heat_vent_type, "heatVentStep": heat_vent_step}
+            
+            # Parse and cache the seat level mapping from first seat with levels
+            if seat_level_mapping is None and levels_str:
+                seat_level_mapping = _parse_supported_levels(levels_str)
+        
+        # Store mapping for this vehicle
+        if seat_level_mapping:
+            _seat_level_mappings[vehicle_id] = seat_level_mapping
+            _LOGGER.info("Hyundai seat level mapping from API for %s: %s", vehicle_id, seat_level_mapping)
         
         _LOGGER.debug("Hyundai seat configurations from API: %s", seat_config_map)
         
@@ -599,10 +652,10 @@ class UsHyundai:
             if generation >= 3:
                 data["igniOnDuration"] = 10
                 data["seatHeaterVentInfo"] = {
-                    "drvSeatHeatState": _seat_settings_hyundai(driver_seat),
-                    "astSeatHeatState": _seat_settings_hyundai(passenger_seat),
-                    "rlSeatHeatState": _seat_settings_hyundai(left_rear_seat),
-                    "rrSeatHeatState": _seat_settings_hyundai(right_rear_seat),
+                    "drvSeatHeatState": _seat_settings_hyundai(driver_seat, vehicle_id),
+                    "astSeatHeatState": _seat_settings_hyundai(passenger_seat, vehicle_id),
+                    "rlSeatHeatState": _seat_settings_hyundai(left_rear_seat, vehicle_id),
+                    "rrSeatHeatState": _seat_settings_hyundai(right_rear_seat, vehicle_id),
                 }
         else:
             # ICE vehicle
@@ -614,10 +667,10 @@ class UsHyundai:
                 "heating1": int(heating),
                 "igniOnDuration": 10,
                 "seatHeaterVentInfo": {
-                    "drvSeatHeatState": _seat_settings_hyundai(driver_seat),
-                    "astSeatHeatState": _seat_settings_hyundai(passenger_seat),
-                    "rlSeatHeatState": _seat_settings_hyundai(left_rear_seat),
-                    "rrSeatHeatState": _seat_settings_hyundai(right_rear_seat),
+                    "drvSeatHeatState": _seat_settings_hyundai(driver_seat, vehicle_id),
+                    "astSeatHeatState": _seat_settings_hyundai(passenger_seat, vehicle_id),
+                    "rlSeatHeatState": _seat_settings_hyundai(left_rear_seat, vehicle_id),
+                    "rrSeatHeatState": _seat_settings_hyundai(right_rear_seat, vehicle_id),
                 },
                 "username": self.username,
                 "vin": vehicle.get("vin"),
