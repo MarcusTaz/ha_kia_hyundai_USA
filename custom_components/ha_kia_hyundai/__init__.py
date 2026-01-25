@@ -1,15 +1,15 @@
-"""Kia/Hyundai US integration using fixed kia-hyundai-api.
+"""Kia/Hyundai/Genesis US integration.
 
 Architecture:
-- ONE config entry per Kia account (username as unique_id)
+- ONE config entry per account (username + brand as unique_id)
 - Multiple vehicles stored in the entry's data
 - Each vehicle becomes a separate device in Home Assistant
 - All vehicles share a single API connection to prevent session conflicts
 
-This integration uses an embedded, fixed version of kia-hyundai-api with:
-- Updated API headers matching the current Kia iOS app
-- Fixed OTP flow with proper _complete_login_with_otp step
-- Added tncFlag to login payload
+Supported brands:
+- Kia: Uses OTP-based authentication
+- Hyundai: Uses PIN-based authentication (BlueLink)
+- Genesis: Uses PIN-based authentication (Connected Services)
 """
 
 import asyncio
@@ -26,11 +26,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-# Use embedded fixed library
+# Use embedded API libraries
 from .kia_hyundai_api import UsKia, AuthError
+from .kia_hyundai_api.us_hyundai import UsHyundai
+from .kia_hyundai_api.us_genesis import UsGenesis
 
 from .const import (
+    CONF_BRAND,
     CONF_DEVICE_ID,
+    CONF_PIN,
     CONF_REFRESH_TOKEN,
     DOMAIN,
     PLATFORMS,
@@ -38,6 +42,10 @@ from .const import (
     CONF_VEHICLES,
     DEFAULT_SCAN_INTERVAL,
     CONFIG_FLOW_VERSION,
+    BRAND_KIA,
+    BRAND_HYUNDAI,
+    BRAND_GENESIS,
+    BRANDS,
 )
 from .services import async_setup_services, async_unload_services
 from .vehicle_coordinator import VehicleCoordinator
@@ -81,6 +89,10 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         else:
             new_data[CONF_VEHICLES] = []
         
+        # Add brand if missing (legacy entries are all Kia)
+        if CONF_BRAND not in new_data:
+            new_data[CONF_BRAND] = BRAND_KIA
+        
         # Remove old OTP fields if present
         for key in ["otp_type", "otp_code", "access_token"]:
             new_data.pop(key, None)
@@ -96,6 +108,11 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     elif config_entry.version < CONFIG_FLOW_VERSION:
         # Version bump without structural changes
         new_data = {**config_entry.data}
+        
+        # Add brand if missing (legacy entries are all Kia)
+        if CONF_BRAND not in new_data:
+            new_data[CONF_BRAND] = BRAND_KIA
+        
         hass.config_entries.async_update_entry(
             config_entry, data=new_data, version=CONFIG_FLOW_VERSION
         )
@@ -106,11 +123,13 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry):
 
 async def _get_or_create_api_connection(
     hass: HomeAssistant,
+    brand: str,
     username: str,
     password: str,
     device_id: str | None,
-    refresh_token: str | None,
-) -> UsKia:
+    refresh_token: str | None = None,
+    pin: str | None = None,
+) -> UsKia | UsHyundai | UsGenesis:
     """Get or create a shared API connection for all vehicles.
     
     This prevents session conflicts when multiple vehicles are set up
@@ -118,72 +137,122 @@ async def _get_or_create_api_connection(
     """
     hass.data.setdefault(DOMAIN, {})
     
-    # Create lock if it doesn't exist
-    if API_CONNECTION_LOCK_KEY not in hass.data[DOMAIN]:
-        hass.data[DOMAIN][API_CONNECTION_LOCK_KEY] = asyncio.Lock()
+    # Use brand-specific key for connection storage
+    connection_key = f"{API_CONNECTION_KEY}_{brand}_{username}"
+    lock_key = f"{API_CONNECTION_LOCK_KEY}_{brand}_{username}"
     
-    lock = hass.data[DOMAIN][API_CONNECTION_LOCK_KEY]
+    # Create lock if it doesn't exist
+    if lock_key not in hass.data[DOMAIN]:
+        hass.data[DOMAIN][lock_key] = asyncio.Lock()
+    
+    lock = hass.data[DOMAIN][lock_key]
     
     async with lock:
         # Check if we already have a valid connection
-        existing_connection = hass.data[DOMAIN].get(API_CONNECTION_KEY)
+        existing_connection = hass.data[DOMAIN].get(connection_key)
         if existing_connection is not None:
-            # Verify the connection is still valid
-            if existing_connection.session_id is not None:
-                _LOGGER.debug("Reusing existing API connection")
-                return existing_connection
-            else:
-                _LOGGER.debug("Existing connection has no session, creating new one")
+            # Verify the connection is still valid based on brand
+            if brand == BRAND_KIA:
+                if existing_connection.session_id is not None:
+                    _LOGGER.debug("Reusing existing Kia API connection")
+                    return existing_connection
+            else:  # Hyundai or Genesis
+                if existing_connection.access_token is not None:
+                    _LOGGER.debug("Reusing existing %s API connection", BRANDS.get(brand, brand))
+                    return existing_connection
+            
+            _LOGGER.debug("Existing connection has no session/token, creating new one")
         
-        _LOGGER.info("Creating new shared API connection")
+        brand_name = BRANDS.get(brand, brand)
+        _LOGGER.info("Creating new shared %s API connection", brand_name)
         
         client_session = async_get_clientsession(hass)
         
-        # Dummy OTP callback - should not be called during normal operation
-        async def otp_callback(context):
-            _LOGGER.error("OTP callback called unexpectedly during entry setup")
-            raise ConfigEntryAuthFailed("OTP required - please reconfigure the integration")
-        
-        # Create API connection with stored credentials
-        api_connection = UsKia(
-            username=username,
-            password=password,
-            otp_callback=otp_callback,
-            device_id=device_id,
-            refresh_token=refresh_token,
-            client_session=client_session,
-        )
-        
-        _LOGGER.debug("Logging in to Kia API...")
-        await api_connection.login()
-        _LOGGER.debug("Login successful, session_id: %s", api_connection.session_id is not None)
+        if brand == BRAND_KIA:
+            # Dummy OTP callback - should not be called during normal operation
+            async def otp_callback(context):
+                _LOGGER.error("OTP callback called unexpectedly during entry setup")
+                raise ConfigEntryAuthFailed("OTP required - please reconfigure the integration")
+            
+            api_connection = UsKia(
+                username=username,
+                password=password,
+                otp_callback=otp_callback,
+                device_id=device_id,
+                refresh_token=refresh_token,
+                client_session=client_session,
+            )
+            
+            _LOGGER.debug("Logging in to Kia API...")
+            await api_connection.login()
+            _LOGGER.debug("Login successful, session_id: %s", api_connection.session_id is not None)
+            
+        elif brand == BRAND_HYUNDAI:
+            if not pin:
+                raise ConfigEntryError("PIN required for Hyundai BlueLink")
+            
+            api_connection = UsHyundai(
+                username=username,
+                password=password,
+                pin=pin,
+                device_id=device_id,
+                client_session=client_session,
+            )
+            
+            _LOGGER.debug("Logging in to Hyundai BlueLink API...")
+            await api_connection.login()
+            _LOGGER.debug("Login successful, access_token: %s", api_connection.access_token is not None)
+            
+        elif brand == BRAND_GENESIS:
+            if not pin:
+                raise ConfigEntryError("PIN required for Genesis Connected Services")
+            
+            api_connection = UsGenesis(
+                username=username,
+                password=password,
+                pin=pin,
+                device_id=device_id,
+                client_session=client_session,
+            )
+            
+            _LOGGER.debug("Logging in to Genesis API...")
+            await api_connection.login()
+            _LOGGER.debug("Login successful, access_token: %s", api_connection.access_token is not None)
+            
+        else:
+            raise ConfigEntryError(f"Unknown brand: {brand}")
         
         # Get vehicles from API to update local data
         await api_connection.get_vehicles()
         
         # Store the connection for reuse
-        hass.data[DOMAIN][API_CONNECTION_KEY] = api_connection
+        hass.data[DOMAIN][connection_key] = api_connection
         
         return api_connection
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
-    """Set up Kia/Hyundai US from a config entry.
+    """Set up Kia/Hyundai/Genesis US from a config entry.
     
     This creates coordinators for ALL vehicles in the account.
     """
+    # Get brand with fallback for legacy entries
+    brand = config_entry.data.get(CONF_BRAND, BRAND_KIA)
+    brand_name = BRANDS.get(brand, brand)
+    
     username = config_entry.data[CONF_USERNAME]
     password = config_entry.data[CONF_PASSWORD]
     device_id = config_entry.data.get(CONF_DEVICE_ID)
     refresh_token = config_entry.data.get(CONF_REFRESH_TOKEN)
+    pin = config_entry.data.get(CONF_PIN)
     vehicles_config = config_entry.data.get(CONF_VEHICLES, [])
 
     scan_interval = timedelta(
         minutes=config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
 
-    _LOGGER.info("Setting up Kia/Hyundai US integration for account %s with %d vehicles", 
-                 username, len(vehicles_config))
+    _LOGGER.info("Setting up %s integration for account %s with %d vehicles", 
+                 brand_name, username, len(vehicles_config))
 
     hass.data.setdefault(DOMAIN, {})
 
@@ -191,10 +260,12 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         # Get or create shared API connection
         api_connection = await _get_or_create_api_connection(
             hass=hass,
+            brand=brand,
             username=username,
             password=password,
             device_id=device_id,
             refresh_token=refresh_token,
+            pin=pin,
         )
 
         if api_connection.vehicles is None:
@@ -207,14 +278,19 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         if api_connection.device_id != device_id:
             new_data[CONF_DEVICE_ID] = api_connection.device_id
             data_changed = True
-        if api_connection.refresh_token != refresh_token:
-            new_data[CONF_REFRESH_TOKEN] = api_connection.refresh_token
-            data_changed = True
         
-        # Update vehicle info from API (vehicle keys change on each login)
+        # Only update refresh_token for Kia (Hyundai/Genesis don't use it the same way)
+        if brand == BRAND_KIA:
+            if hasattr(api_connection, 'refresh_token') and api_connection.refresh_token != refresh_token:
+                new_data[CONF_REFRESH_TOKEN] = api_connection.refresh_token
+                data_changed = True
+        
+        # Update vehicle info from API (vehicle keys/regids change on each login)
         updated_vehicles = []
         for api_vehicle in api_connection.vehicles:
-            api_vehicle_id = api_vehicle.get("vehicleIdentifier")
+            # Handle different field names by brand
+            api_vehicle_id = api_vehicle.get("vehicleIdentifier", api_vehicle.get("id", api_vehicle.get("regid", "")))
+            
             # Check if this vehicle is in our config
             for config_vehicle in vehicles_config:
                 if config_vehicle.get("id") == api_vehicle_id:
@@ -222,22 +298,22 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
                     updated_vehicles.append({
                         "id": api_vehicle_id,
                         "name": api_vehicle.get("nickName", config_vehicle.get("name", "Unknown")),
-                        "model": api_vehicle.get("modelName", config_vehicle.get("model", "Unknown")),
+                        "model": api_vehicle.get("modelName", api_vehicle.get("modelCode", config_vehicle.get("model", "Unknown"))),
                         "year": api_vehicle.get("modelYear", config_vehicle.get("year", "")),
-                        "vin": api_vehicle.get("vin", config_vehicle.get("vin", "")),
-                        "key": api_vehicle.get("vehicleKey", config_vehicle.get("key", "")),
+                        "vin": api_vehicle.get("vin", api_vehicle.get("VIN", config_vehicle.get("vin", ""))),
+                        "key": api_vehicle.get("vehicleKey", api_vehicle.get("regid", config_vehicle.get("key", ""))),
                     })
                     break
             else:
                 # Vehicle in API but not in config - add it
-                _LOGGER.info("Found new vehicle in account: %s", api_vehicle.get("nickName"))
+                _LOGGER.info("Found new vehicle in account: %s", api_vehicle.get("nickName", "Unknown"))
                 updated_vehicles.append({
                     "id": api_vehicle_id,
                     "name": api_vehicle.get("nickName", "Unknown"),
-                    "model": api_vehicle.get("modelName", "Unknown"),
+                    "model": api_vehicle.get("modelName", api_vehicle.get("modelCode", "Unknown")),
                     "year": api_vehicle.get("modelYear", ""),
-                    "vin": api_vehicle.get("vin", ""),
-                    "key": api_vehicle.get("vehicleKey", ""),
+                    "vin": api_vehicle.get("vin", api_vehicle.get("VIN", "")),
+                    "key": api_vehicle.get("vehicleKey", api_vehicle.get("regid", "")),
                 })
         
         if updated_vehicles != vehicles_config:

@@ -13,6 +13,19 @@ CONF_OTP_TYPE: str = "otp_type"
 CONF_OTP_CODE: str = "otp_code"
 CONF_DEVICE_ID: str = "device_id"
 CONF_REFRESH_TOKEN: str = "refresh_token"
+CONF_BRAND: str = "brand"
+CONF_PIN: str = "pin"
+
+# Brand constants
+BRAND_KIA: str = "kia"
+BRAND_HYUNDAI: str = "hyundai"
+BRAND_GENESIS: str = "genesis"
+
+BRANDS = {
+    BRAND_KIA: "Kia",
+    BRAND_HYUNDAI: "Hyundai", 
+    BRAND_GENESIS: "Genesis",
+}
 
 CONFIG_FLOW_TEMP_VEHICLES: str = "_temp_vehicles"
 

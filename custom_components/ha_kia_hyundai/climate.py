@@ -62,7 +62,10 @@ class Thermostat(VehicleCoordinatorBaseEntity, ClimateEntity):
             name="Climate",
             key="climate",
         ))
-        self._attr_target_temperature = int(self.coordinator.climate_temperature_value)
+        # Initialize coordinator's desired temp from vehicle's current setting
+        current_temp = self.coordinator.climate_temperature_value
+        if current_temp is not None:
+            self.coordinator.desired_temperature = int(current_temp)
         self._attr_hvac_modes = [
             HVACMode.OFF,
             HVACMode.HEAT_COOL,
@@ -71,6 +74,11 @@ class Thermostat(VehicleCoordinatorBaseEntity, ClimateEntity):
         self._attr_temperature_unit = UnitOfTemperature.FAHRENHEIT
         self._attr_max_temp = TEMPERATURE_MAX
         self._attr_min_temp = TEMPERATURE_MIN
+
+    @property
+    def target_temperature(self) -> int:
+        """Return the target temperature."""
+        return self.coordinator.desired_temperature
 
     @property
     def hvac_mode(self) -> HVACMode | str | None:
@@ -96,7 +104,7 @@ class Thermostat(VehicleCoordinatorBaseEntity, ClimateEntity):
             self.coordinator.climate_desired_defrost,
             self.coordinator.climate_desired_heating_acc,
             self.coordinator.desired_steering_wheel_heat,
-            self.target_temperature,
+            self.coordinator.desired_temperature,
         )
         match hvac_mode.strip().lower():
             case HVACMode.OFF:
@@ -105,7 +113,7 @@ class Thermostat(VehicleCoordinatorBaseEntity, ClimateEntity):
                 await self.coordinator.api_connection.start_climate(
                     vehicle_id=self.coordinator.vehicle_id,
                     climate=True,
-                    set_temp=int(self.target_temperature),
+                    set_temp=self.coordinator.desired_temperature,
                     defrost=self.coordinator.climate_desired_defrost,
                     heating=self.coordinator.climate_desired_heating_acc,
                     steering_wheel_heat=self.coordinator.desired_steering_wheel_heat,
@@ -120,5 +128,7 @@ class Thermostat(VehicleCoordinatorBaseEntity, ClimateEntity):
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         _LOGGER.debug(f"set_temperature; kwargs:{kwargs}")
-        self._attr_target_temperature = kwargs.get(ATTR_TEMPERATURE)
+        new_temp = kwargs.get(ATTR_TEMPERATURE)
+        if new_temp is not None:
+            self.coordinator.desired_temperature = int(new_temp)
         self.coordinator.async_update_listeners()

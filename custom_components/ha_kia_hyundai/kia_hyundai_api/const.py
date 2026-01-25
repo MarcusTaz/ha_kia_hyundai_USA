@@ -11,11 +11,23 @@ SENSITIVE_FIELD_NAMES = [
     "vinkey",
     "lat",
     "lon",
+    "blueLinkServicePin",
+    "accessToken",
 ]
 
-# Updated to match current Kia iOS app
+# Kia USA API (iOS app headers)
 API_URL_HOST = "api.owners.kia.com"
 API_URL_BASE = "https://" + API_URL_HOST + "/apigw/v1/"
+
+# Hyundai USA API (BlueLink)
+HYUNDAI_API_URL_HOST = "api.telematics.hyundaiusa.com"
+HYUNDAI_LOGIN_API_BASE = "https://" + HYUNDAI_API_URL_HOST + "/v2/ac/"
+HYUNDAI_API_URL_BASE = "https://" + HYUNDAI_API_URL_HOST + "/ac/v2/"
+
+# Genesis USA API (uses Hyundai infrastructure with different brand indicator)
+GENESIS_API_URL_HOST = "api.telematics.hyundaiusa.com"
+GENESIS_LOGIN_API_BASE = "https://" + GENESIS_API_URL_HOST + "/v2/ac/"
+GENESIS_API_URL_BASE = "https://" + GENESIS_API_URL_HOST + "/ac/v2/"
 
 
 class SeatSettings(Enum):

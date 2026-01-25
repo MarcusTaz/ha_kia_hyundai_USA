@@ -26,6 +26,7 @@ def request_with_active_session(func):
 
 
 def request_with_logging(func):
+    """Decorator for Kia API requests with Kia-specific response format handling."""
     @wraps(func)
     async def request_with_logging_wrapper(*args, **kwargs):
         url = kwargs["url"]
@@ -93,4 +94,67 @@ def request_with_logging(func):
             response_text = await response.text()
             _LOGGER.debug(f"error: unknown error response {e}, text: {response_text[:500]}")
             raise ClientError(f"unknown error response: {e}")
+    return request_with_logging_wrapper
+
+
+def request_with_logging_bluelink(func):
+    """Decorator for Hyundai/Genesis BlueLink API requests with simpler response handling."""
+    @wraps(func)
+    async def request_with_logging_wrapper(*args, **kwargs):
+        url = kwargs["url"]
+        json_body = kwargs.get("json_body")
+        if json_body is not None:
+            _LOGGER.debug(
+                f"sending {url} request with {clean_dictionary_for_logging(json_body)}"
+            )
+        else:
+            _LOGGER.debug(f"sending {url} request")
+        response = await func(*args, **kwargs)
+        _LOGGER.debug(
+            f"response headers:{clean_dictionary_for_logging(response.headers)}"
+        )
+        
+        # Check content type before trying to parse JSON
+        content_type = response.headers.get("Content-Type", "")
+        if "application/json" not in content_type:
+            response_text = await response.text()
+            _LOGGER.warning(
+                f"API returned non-JSON response (Content-Type: {content_type}). "
+                f"First 500 chars: {response_text[:500]}"
+            )
+            raise AuthError(f"API returned non-JSON response (Content-Type: {content_type})")
+        
+        try:
+            response_json = await response.json()
+            _LOGGER.debug(
+                f"response json:{clean_dictionary_for_logging(response_json)}"
+            )
+            
+            # BlueLink API error handling - different format than Kia
+            # Check for error responses
+            if "errorCode" in response_json and response_json.get("errorCode") != 0:
+                error_msg = response_json.get("errorMessage", response_json.get("errorSubMessage", "Unknown error"))
+                error_code = response_json.get("errorCode")
+                _LOGGER.debug(f"BlueLink API error: {error_code} - {error_msg}")
+                
+                # Auth errors
+                if error_code in [401, 403, 1003, 1005]:
+                    raise AuthError(f"BlueLink auth error: {error_msg}")
+                
+                raise ClientError(f"BlueLink API error: {error_msg}")
+            
+            # Success - return response
+            return response
+            
+        except ContentTypeError as e:
+            response_text = await response.text()
+            _LOGGER.warning(f"ContentTypeError parsing response: {e}. Text: {response_text[:500]}")
+            raise AuthError(f"API returned invalid response: {e}")
+        except (AuthError, ClientError):
+            raise
+        except Exception as e:
+            _LOGGER.debug(f"BlueLink response parsing note: {e}")
+            # For BlueLink, if we can't parse specific error format, just return the response
+            # The calling code will handle parsing
+            return response
     return request_with_logging_wrapper

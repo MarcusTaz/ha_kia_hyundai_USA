@@ -2,12 +2,28 @@
   "config": {
     "step": {
       "user": {
-        "title": "Kia/Hyundai US Setup",
-        "description": "Enter your Kia Connect credentials and select how you want to receive the OTP code.",
+        "title": "Select Vehicle Brand",
+        "description": "Choose your vehicle brand to continue setup.",
+        "data": {
+          "brand": "Vehicle Brand"
+        }
+      },
+      "kia_credentials": {
+        "title": "Kia Connect Credentials",
+        "description": "Enter your Kia Connect credentials. An OTP code will be sent to verify your account.",
         "data": {
           "username": "Email",
           "password": "Password",
           "otp_type": "OTP Delivery Method"
+        }
+      },
+      "bluelink_credentials": {
+        "title": "{brand} Credentials",
+        "description": "Enter your {brand} BlueLink/Connected Services credentials and PIN.",
+        "data": {
+          "username": "Email",
+          "password": "Password",
+          "pin": "4-Digit PIN"
         }
       },
       "otp_code": {
@@ -18,13 +34,14 @@
         }
       },
       "confirm_vehicles": {
-        "title": "Confirm Vehicles",
+        "title": "Confirm {brand} Vehicles",
         "description": "Found {vehicle_count} vehicle(s) in your account:\n\n{vehicle_list}\n\nClick Submit to add all vehicles to Home Assistant. You can assign areas to each vehicle after setup."
       }
     },
     "error": {
       "auth": "Authentication failed. Check your credentials.",
       "invalid_otp": "Invalid OTP code. Please try again.",
+      "invalid_pin": "PIN must be exactly 4 digits.",
       "unknown": "Unknown error occurred."
     },
     "abort": {

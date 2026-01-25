@@ -1,7 +1,7 @@
-"""Vehicle Coordinator for Kia/Hyundai US integration.
+"""Vehicle Coordinator for Kia/Hyundai/Genesis US integration.
 
 This coordinator manages data updates and API interactions using the
-embedded fixed kia-hyundai-api library.
+embedded API libraries for Kia, Hyundai, and Genesis.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 from asyncio import sleep
 from datetime import timedelta, datetime
 from logging import getLogger
-from typing import Any
+from typing import Any, Union
 
 from aiohttp import ClientError
 from homeassistant.config_entries import ConfigEntry
@@ -22,6 +22,8 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .kia_hyundai_api import UsKia
+from .kia_hyundai_api.us_hyundai import UsHyundai
+from .kia_hyundai_api.us_genesis import UsGenesis
 from .const import (
     DOMAIN,
     DELAY_BETWEEN_ACTION_IN_PROGRESS_CHECKING,
@@ -33,6 +35,9 @@ from .util import safely_get_json_value, convert_last_updated_str_to_datetime
 
 _LOGGER = getLogger(__name__)
 
+# Type alias for all supported API clients
+ApiConnection = Union[UsKia, UsHyundai, UsGenesis]
+
 
 class VehicleCoordinator(DataUpdateCoordinator):
     """Coordinator for Kia/Hyundai vehicle data updates."""
@@ -40,12 +45,12 @@ class VehicleCoordinator(DataUpdateCoordinator):
     # Desired climate settings (set by UI before starting climate)
     climate_desired_defrost: bool = False
     climate_desired_heating_acc: bool = False
-    desired_steering_wheel_heat: int = 0  # 0=off, 1=low, 2=high
+    desired_temperature: int = 72  # Default temperature in Fahrenheit
+    desired_steering_wheel_heat: int = 0  # 0=off, 1=low/on, 2=high
     desired_driver_seat_comfort: SeatSettings | None = None
     desired_passenger_seat_comfort: SeatSettings | None = None
     desired_left_rear_seat_comfort: SeatSettings | None = None
     desired_right_rear_seat_comfort: SeatSettings | None = None
-    desired_steering_wheel_heat: int = 0  # 0=off, 1=low/on, 2=high (UI preference only for now)
 
     def __init__(
         self,
@@ -54,14 +59,14 @@ class VehicleCoordinator(DataUpdateCoordinator):
         vehicle_id: str,
         vehicle_name: str,
         vehicle_model: str,
-        api_connection: UsKia,
+        api_connection: ApiConnection,
         scan_interval: timedelta,
     ) -> None:
         """Initialize the coordinator."""
         self.vehicle_id: str = vehicle_id
         self.vehicle_name: str = vehicle_name
         self.vehicle_model: str = vehicle_model
-        self.api_connection: UsKia = api_connection
+        self.api_connection: ApiConnection = api_connection
 
         request_refresh_debouncer = Debouncer(
             hass,
@@ -87,10 +92,22 @@ class VehicleCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug("Waiting for action to complete")
                 await sleep(DELAY_BETWEEN_ACTION_IN_PROGRESS_CHECKING)
 
-            # Get cached vehicle status
-            new_data = await self.api_connection.get_cached_vehicle_status(
-                vehicle_id=vehicle_id
-            )
+            # Get cached vehicle status - handle temporary API errors gracefully
+            try:
+                new_data = await self.api_connection.get_cached_vehicle_status(
+                    vehicle_id=vehicle_id
+                )
+            except ClientError as err:
+                # API temporarily unavailable (common after remote commands)
+                # Return existing data if available to prevent going unavailable
+                if self.data is not None:
+                    _LOGGER.warning(
+                        "Temporary API error during refresh, using cached data: %s", err
+                    )
+                    return self.data
+                else:
+                    # No cached data available, must raise the error
+                    raise
 
             # Sort target SOC by plug type if present
             target_soc = safely_get_json_value(
