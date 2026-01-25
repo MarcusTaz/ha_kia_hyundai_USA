@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Kia/Hyundai US Setup",
+        "title": "Kia/Hyundai/Genesis (USA) Setup",
         "description": "Enter your Kia Connect credentials and select how you want to receive the OTP code.",
         "data": {
           "username": "Email",

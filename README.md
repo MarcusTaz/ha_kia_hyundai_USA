@@ -1,4 +1,4 @@
-# Kia Connect (USA) - Community Maintained
+# Kia/Hyundai/Genesis (USA) - Community Maintained
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![GitHub Release](https://img.shields.io/github/v/release/MarcusTaz/ha_kia_hyundai_USA?include_prereleases)](https://github.com/MarcusTaz/ha_kia_hyundai_USA/releases)
