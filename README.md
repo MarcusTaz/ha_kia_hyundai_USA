@@ -1,190 +1,203 @@
-# Kia Hyundai Genesis (USA) - Community Maintained
+# Kia/Hyundai/Genesis (USA) - Home Assistant Integration
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![GitHub Release](https://img.shields.io/github/release/MarcusTaz/ha_kia_hyundai_USA.svg)](https://github.com/MarcusTaz/ha_kia_hyundai_USA/releases)
 [![License](https://img.shields.io/github/license/MarcusTaz/ha_kia_hyundai_USA.svg)](LICENSE)
 
-A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles (USA)** with full authentication support. This is a community-maintained fork that fixes critical issues after the original repository was archived.
+A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered in the United States**. This is a community-maintained fork with active development.
 
-## 🚗 What This Integration Does
+## Requirements
 
-Connect your USA Kia, Hyundai, or Genesis vehicle to Home Assistant and control:
-- 🔋 Battery level & charging status
-- 🌡️ Climate control (start/stop HVAC remotely)
-- 🔒 Door locks (lock/unlock)
-- 📍 Vehicle location
-- ⚡ Charge limits (AC/DC)
-- 🚪 Door, trunk, and hood status
-- 🔧 Tire pressure warnings
-- 📊 Odometer & range
-- 🔌 Charging switch (start/stop charging when plugged in)
+- **USA Only** - Vehicles must be registered in the United States
+- **Active Subscription** - Kia Connect, Hyundai Blue Link, or Genesis Connected Services
+- **Home Assistant** - Version 2023.1.0 or newer
+- **HACS** - For easy installation (recommended)
 
-## ⚠️ Important Notes
+## Features
 
-- **USA ONLY** - This integration only works with vehicles registered in the United States
-- **Active Subscription Required** - Your vehicle must have an active Kia Connect, Hyundai Blue Link, or Genesis Connected Services subscription
+- Remote lock/unlock
+- Remote climate start/stop
+- Climate temperature control
+- Steering wheel heat control
+- Seat heating and cooling
+- Vehicle location tracking
+- Battery and charging status (EV/hybrid)
+- Charge limit control (AC/DC)
+- Door, trunk, and hood status
+- Tire pressure warnings
+- Odometer and range
+- 12V battery level
 
-## 🔧 Why This Fork Exists
-
-The original [dahlb/ha_kia_hyundai](https://github.com/dahlb/ha_kia_hyundai) repository was **archived in December 2024** due to API challenges. However, the community still needs this integration!
-
-**This fork provides:**
-- ✅ **Fixed authentication** (works with current APIs)
-- ✅ **Bug fixes** for config flow errors
-- ✅ **Active maintenance** for the community
-- ✅ **Embedded API** (no external dependencies)
-- ✅ **Multi-brand support** (Kia, Hyundai, Genesis)
-
-## 📦 Installation
+## Installation
 
 ### Via HACS (Recommended)
 
-1. Open **HACS** in Home Assistant
-2. Click the **three dots** (⋮) in the top right
-3. Select **"Custom repositories"**
-4. Add this repository URL: `https://github.com/MarcusTaz/ha_kia_hyundai_USA`
-5. Category: **Integration**
-6. Click **"Add"**
-7. Search for **"Kia Hyundai Genesis (USA)"** and install
-8. **Restart Home Assistant**
+1. Open HACS in Home Assistant
+2. Click the three dots menu in the top right
+3. Select "Custom repositories"
+4. Add: `https://github.com/MarcusTaz/ha_kia_hyundai_USA`
+5. Category: Integration
+6. Click "Add"
+7. Search for "Kia/Hyundai/Genesis (USA)" and install
+8. Restart Home Assistant
 
 ### Manual Installation
 
-1. Download the latest release
+1. Download the latest release from [Releases](https://github.com/MarcusTaz/ha_kia_hyundai_USA/releases)
 2. Extract to `/config/custom_components/ha_kia_hyundai/`
 3. Restart Home Assistant
 
-## ⚙️ Configuration
+## Configuration
 
-1. Go to **Settings** → **Devices & Services**
-2. Click **"+ Add Integration"**
-3. Search for **"Kia Hyundai Genesis (USA)"**
-4. Enter your **account username and password** (Kia Connect, Hyundai Blue Link, or Genesis Connected Services)
-5. Choose **OTP delivery method** (SMS or Email)
-6. Enter the **OTP code** when prompted
-7. Your vehicle(s) will be automatically added!
+### Step 1: Add the Integration
 
-### Multiple Vehicles
+1. Go to Settings > Devices & Services
+2. Click "+ Add Integration"
+3. Search for "Kia/Hyundai/Genesis (USA)"
+4. Select your vehicle brand (Kia, Hyundai, or Genesis)
 
-**Current Behavior:** The integration will automatically detect and add up to 2 vehicles per login session. If you have 3 or more vehicles:
-- First 2 vehicles will be added successfully on initial login
-- Additional vehicles can be added after the API rate limit clears (wait time varies, but 24 hours is a safe estimate)
-- Simply log in again after waiting to add remaining vehicles
+### Step 2: Authentication (Brand-Specific)
 
-**Known Limitation:** Vehicles with older infotainment systems (pre-ccOS) may not be detected during the initial vehicle discovery. This is a compatibility issue with the underlying API, not a rate limiting issue. If you have a mix of newer and older vehicles:
-- Newer vehicles (with ccOS) will typically be detected first
-- Older vehicles may not appear in the available vehicle list at all
-- Currently investigating solutions for better older vehicle support
+**Kia Vehicles:**
+- Enter your Kia Connect email and password
+- Select OTP delivery method (Email or SMS)
+- Enter the OTP code sent to your email or phone
+- Your vehicles will be discovered automatically
 
-## 🔄 Update Frequency
+**Hyundai Vehicles:**
+- Enter your Hyundai Blue Link email and password
+- Enter your 4-digit PIN (the same PIN you use in the Blue Link app)
+- Your vehicles will be discovered automatically
 
-- **Cached data fetch**: Every 10 minutes (configurable)
-- **Force update**: Not recommended frequently to avoid draining 12V battery
+**Genesis Vehicles:**
+- Enter your Genesis Connected Services email and password
+- Enter your 4-digit PIN (the same PIN you use in the Genesis app)
+- Your vehicles will be discovered automatically
 
-## 🎛️ Services
+### Step 3: Confirm Vehicles
 
-### Climate Control
-- `climate.set_temperature` - Set target temperature
-- `climate.turn_on` - Start climate (uses preset defrost/heating settings)
-- `climate.turn_off` - Stop climate
+After authentication, the integration will display all vehicles found in your account. Confirm to add them to Home Assistant.
 
-### Charging
-- `switch.turn_on` / `switch.turn_off` - Start/stop charging (when plugged in)
-- `number.set_value` - Set AC/DC charge limits
-
-### Vehicle Actions
-- `lock.lock` / `lock.unlock` - Lock/unlock doors
-- `button.press` - Request vehicle status update (use sparingly!)
-
-## 🛠 Troubleshooting
-
-### Authentication Issues
-- Make sure you select the correct OTP method (SMS or Email)
-- Check your phone/email for the code
-- Code expires after a few minutes - request a new one if needed
-
-### Rate Limiting
-If you see "Please try again later" errors:
-- The API has rate limits to prevent excessive requests
-- Wait 24 hours before attempting to add additional vehicles
-- Avoid making multiple login attempts in quick succession
-
-### Multiple Vehicles Not Appearing
-**If only 2 of your 3+ vehicles were added:**
-- This is due to API rate limiting (max 2 vehicles per session)
-- Wait for the rate limit to clear (wait time varies, but 24 hours is a safe estimate), then log in again
-- Each login session can add up to 2 vehicles
-
-**If a specific vehicle never appears in the list:**
-- May be due to older infotainment system (pre-ccOS) incompatibility
-- Verify the vehicle has an active subscription
-- Check if the vehicle appears in the official app
-- If it works in the official app but not here, this may be an API limitation
-
-### Enable Debug Logging
-
-1. Go to **Settings** → **Devices & Services**
-2. Find the integration
-3. Click the **three dots** (⋮) on the integration card
-4. Click **"Enable debug logging"**
-5. Reproduce the issue
-6. Go to **Settings** → **System** → **Logs**
-7. Look for entries mentioning `ha_kia_hyundai`
-8. Click the three dots again and **"Disable debug logging"** to download logs
-
-## 📝 Supported Entities
+## Entities Created
 
 ### Sensors
 - Battery level (12V)
-- EV battery level
+- EV battery level (if applicable)
 - Charging status
 - Plugged in status
 - Odometer
-- EV range
+- Estimated range
 - Last update timestamp
 - Tire pressure warnings
-- Door/trunk/hood status
 - Low fuel warning
 
 ### Controls
-- Door locks
-- Climate control
-- Charging switch
-- Charge limit numbers (AC/DC)
-- Heated steering wheel (if supported)
-- Heated rear window (if supported)
-- Defrost/heating acc switches
+- Door lock (lock/unlock)
+- Climate control (on/off, temperature)
+- Charging switch (start/stop when plugged in)
+- AC/DC charge limits
+- Seat heating/cooling selectors
+- Steering wheel heat selector
+- Defrost switches
 
 ### Buttons
-- Force update (requests fresh data from vehicle)
+- Remote Start (starts vehicle with configured climate settings)
+- Remote Stop (stops remote-started vehicle)
+- Force Update (requests fresh data from vehicle - use sparingly)
 
-## 🚗 Vehicle Compatibility
+## Important Warnings
 
-**Fully Supported (Newer ccOS-equipped vehicles):**
-- Most 2024+ Kia, Hyundai, and Genesis models with newer infotainment systems
-- Vehicles with ccOS (Connected Car Operating System)
+### Rate Limiting
+
+The vehicle APIs have rate limits to prevent excessive requests. Making too many API calls in a short period can temporarily block your access.
+
+**Symptoms of rate limiting:**
+- "Please try again later" errors
+- Failed commands or status updates
+- Temporary inability to control vehicle
+
+**Prevention:**
+- Avoid rapidly pressing buttons or refreshing
+- Use the Force Update button sparingly
+- If blocked, wait before trying again (timeout varies by brand, up to 3 hours for some)
+
+### Battery Drain
+
+Frequent API calls can wake your vehicle and drain the 12V battery. The default 10-minute polling interval is designed to minimize this impact. Avoid excessive use of the Force Update button.
+
+## Troubleshooting
+
+### Authentication Failed
+
+**Kia:**
+- Verify your Kia Connect credentials work in the official app
+- Check your email/phone for the OTP code
+- OTP codes expire after a few minutes
+
+**Hyundai/Genesis:**
+- Verify your credentials work in the official Blue Link or Genesis app
+- Ensure your PIN is exactly 4 digits
+- The PIN is the same one you use in the official app
+
+### Vehicle Not Found
+
+- Verify the vehicle appears in your official app (Kia Connect, Blue Link, or Genesis)
+- Ensure your connected services subscription is active
+- Some older vehicles with pre-ccOS infotainment may not be compatible
+
+### Commands Not Working
+
+- Check that the vehicle has cellular connectivity
+- Wait a few minutes and try again (rate limiting may be active)
+- Verify the feature works in the official app
+
+### Enable Debug Logging
+
+1. Go to Settings > Devices & Services
+2. Find the integration and click the three dots menu
+3. Click "Enable debug logging"
+4. Reproduce the issue
+5. Go to Settings > System > Logs
+6. Look for entries mentioning `ha_kia_hyundai`
+
+## Update Frequency
+
+- **Default polling**: Every 10 minutes (configurable in integration options)
+- **After commands**: Automatic refresh after lock/unlock, climate start/stop
+
+## Vehicle Compatibility
+
+**Supported:**
+- Kia vehicles with Kia Connect (USA)
+- Hyundai vehicles with Blue Link (USA)
+- Genesis vehicles with Genesis Connected Services (USA)
+- Most 2020+ model year vehicles
 
 **Limited Support:**
-- Some older model year vehicles may not appear during setup
-- Vehicles with pre-ccOS infotainment systems may have reduced features or detection issues
+- Older vehicles with pre-ccOS infotainment systems may have reduced functionality
 
 **Not Supported:**
-- Non-USA vehicles (use [kia_uvo](https://github.com/Hyundai-Kia-Connect/kia_uvo) for other regions)
-- Vehicles without active subscriptions
+- Vehicles outside the USA (use [kia_uvo](https://github.com/Hyundai-Kia-Connect/kia_uvo) for other regions)
+- Vehicles without active connected services subscriptions
 
-## ⚖️ License
+## Why This Fork Exists
 
-MIT License - see [LICENSE](LICENSE) file
+The original [dahlb/ha_kia_hyundai](https://github.com/dahlb/ha_kia_hyundai) repository was archived in December 2024. This fork continues development with:
 
-## 🙏 Credits
+- Fixed authentication for all three brands
+- Embedded API libraries (no external dependencies)
+- Active maintenance and bug fixes
+- Multi-brand support in a single integration
 
-- **Original Author**: [Bren Dahl (@dahlb)](https://github.com/dahlb) - Thank you for creating this integration!
-- **Community Maintainer**: MarcusTaz - Keeping it alive for the community
-- **Special Thanks**: mmase, Cursor AI, and the Hyundai-Kia-Connect community
+## Credits
 
-## 🤝 Contributing
+- **Original Author**: [Bren Dahl (@dahlb)](https://github.com/dahlb)
+- **Community Maintainer**: [MarcusTaz](https://github.com/MarcusTaz)
+- **Contributors**: mmase, and the Hyundai-Kia-Connect community
 
-This is a community-maintained project! Contributions are welcome:
+## Contributing
+
+Contributions are welcome:
 
 1. Fork the repository
 2. Create a feature branch
@@ -192,32 +205,15 @@ This is a community-maintained project! Contributions are welcome:
 4. Test thoroughly
 5. Submit a pull request
 
-## 💡 Known Issues & Limitations
+## License
 
-- **Multi-vehicle limit**: Only 2 vehicles added per login session due to API rate limiting
-- **Older vehicles**: Pre-ccOS vehicles (older infotainment systems) may not be detected
-- **Rate limit wait**: After adding 2 vehicles, must wait for rate limit to clear (typically within 24 hours) to add additional vehicles
-- **Feature differences**: Older vehicles show fewer entities (e.g., no seat temperature control)
+MIT License - see [LICENSE](LICENSE) file
 
-## ⚠️ Disclaimer
+## Disclaimer
 
-This integration is not affiliated with, endorsed by, or connected to Kia Motors, Hyundai Motor Company, or Genesis Motor. Use at your own risk. Excessive API calls may drain your vehicle's 12V battery.
+This integration is not affiliated with, endorsed by, or connected to Kia Motors, Hyundai Motor Company, or Genesis Motor. Use at your own risk.
 
-## 🔧 Support
+## Support
 
-- **Issues**: [GitHub Issues](https://github.com/MarcusTaz/ha_kia_hyundai_USA/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/MarcusTaz/ha_kia_hyundai_USA/discussions)
-
----
-
-**If this integration helps you, please ⭐ star the repo to show support!**
-
-## 🔮 Future Improvements
-
-We're actively investigating:
-- Better multi-vehicle support
-- Compatibility with older vehicle models
-- Enhanced rate limit handling
-- Automatic retry logic for failed additions
-
-Stay tuned for updates!
+- [GitHub Issues](https://github.com/MarcusTaz/ha_kia_hyundai_USA/issues)
+- [GitHub Discussions](https://github.com/MarcusTaz/ha_kia_hyundai_USA/discussions)
