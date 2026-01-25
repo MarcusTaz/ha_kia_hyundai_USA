@@ -6,8 +6,11 @@ from homeassistant.const import ATTR_DEVICE_ID
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import device_registry
 
-from .const import DOMAIN, STR_TO_ENUM
+from .const import DOMAIN, STR_TO_SEAT_SETTING
 from .vehicle_coordinator import VehicleCoordinator
+
+# Key for coordinators in hass.data
+COORDINATORS_KEY = "_coordinators"
 
 SERVICE_START_CLIMATE = "start_climate"
 SERVICE_SET_CHARGE_LIMIT = "set_charge_limits"
@@ -44,13 +47,13 @@ def async_setup_services(hass: HomeAssistant):
         if set_temp is not None:
             set_temp = int(set_temp)
         if driver_seat is not None:
-            driver_seat = STR_TO_ENUM[driver_seat]
+            driver_seat = STR_TO_SEAT_SETTING[driver_seat]
         if passenger_seat is not None:
-            passenger_seat = STR_TO_ENUM[passenger_seat]
+            passenger_seat = STR_TO_SEAT_SETTING[passenger_seat]
         if left_rear_seat is not None:
-            left_rear_seat = STR_TO_ENUM[left_rear_seat]
+            left_rear_seat = STR_TO_SEAT_SETTING[left_rear_seat]
         if right_rear_seat is not None:
-            right_rear_seat = STR_TO_ENUM[right_rear_seat]
+            right_rear_seat = STR_TO_SEAT_SETTING[right_rear_seat]
 
         await coordinator.api_connection.start_climate(
             vehicle_id=coordinator.vehicle_id,
@@ -91,30 +94,28 @@ def async_setup_services(hass: HomeAssistant):
 def _get_coordinator_from_device(
         hass: HomeAssistant, call: ServiceCall
 ) -> VehicleCoordinator:
-    vehicle_ids = list(hass.data[DOMAIN].keys())
-    if len(vehicle_ids) == 1:
-        return hass.data[DOMAIN][vehicle_ids[0]]
-    else:
-        device_entry = device_registry.async_get(hass).async_get(
-            call.data[ATTR_DEVICE_ID]
-        )
-        config_entry_ids = device_entry.config_entries
-        config_entry_id = next(
-            (
-                config_entry_id
-                for config_entry_id in config_entry_ids
-                    if cast(
-                        ConfigEntry,
-                        hass.config_entries.async_get_entry(config_entry_id),
-                    ).domain
-                       == DOMAIN
-            ),
-            None,
-        )
-        config_entry_unique_id = hass.config_entries.async_get_entry(
-            config_entry_id
-        ).unique_id
-        return hass.data[DOMAIN][config_entry_unique_id]
+    coordinators = hass.data.get(DOMAIN, {}).get(COORDINATORS_KEY, {})
+    
+    # If only one vehicle, use it
+    if len(coordinators) == 1:
+        return list(coordinators.values())[0]
+    
+    # Otherwise, look up by device_id
+    device_entry = device_registry.async_get(hass).async_get(
+        call.data[ATTR_DEVICE_ID]
+    )
+    
+    if device_entry is None:
+        raise ValueError("Device not found")
+    
+    # The device identifiers contain (DOMAIN, vehicle_id)
+    for identifier in device_entry.identifiers:
+        if identifier[0] == DOMAIN:
+            vehicle_id = identifier[1]
+            if vehicle_id in coordinators:
+                return coordinators[vehicle_id]
+    
+    raise ValueError(f"No coordinator found for device {call.data[ATTR_DEVICE_ID]}")
 
 @callback
 def async_unload_services(hass) -> None:

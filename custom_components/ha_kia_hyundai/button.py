@@ -5,11 +5,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import VehicleCoordinator
-from .const import (
-    DOMAIN,
-    CONF_VEHICLE_ID,
-)
+from . import VehicleCoordinator, get_all_coordinators
+from .const import DOMAIN
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 _LOGGER = getLogger(__name__)
@@ -19,12 +16,13 @@ PARALLEL_UPDATES: int = 1
 async def async_setup_entry(
     hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
-    vehicle_id = config_entry.data[CONF_VEHICLE_ID]
-    coordinator: VehicleCoordinator = hass.data[DOMAIN][vehicle_id]
+    coordinators = get_all_coordinators(hass)
 
-    async_add_entities([
-        RequestUpdateFromCarButton(coordinator=coordinator),
-    ])
+    entities = []
+    for coordinator in coordinators.values():
+        entities.append(RequestUpdateFromCarButton(coordinator=coordinator))
+    
+    async_add_entities(entities)
 
 
 class RequestUpdateFromCarButton(VehicleCoordinatorBaseEntity, ButtonEntity):

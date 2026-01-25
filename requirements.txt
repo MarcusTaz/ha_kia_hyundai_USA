@@ -1,3 +1,6 @@
-homeassistant==2024.12.0
-ruff==0.14.10
-kia-hyundai-api==1.6.4
+# Requirements for Kia/Hyundai US integration
+# The main API library is now embedded in custom_components/ha_kia_hyundai/kia_hyundai_api/
+# These are the dependencies for that embedded library:
+aiohttp>=3.8.0
+certifi>=2021.10.8
+pytz>=2021.3
