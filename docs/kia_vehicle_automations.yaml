@@ -1,0 +1,889 @@
+# =============================================================================
+# KIA Vehicle Home Assistant Automations
+# =============================================================================
+# For: EV9, EV6 EMMA, EV6 Ava
+# Integration: ha_kia_hyundai
+# HA Version: 2024.12+
+#
+# ENTITY NAMING CONVENTION:
+# Your entity IDs will follow this pattern based on vehicle names:
+#   - EV9:       sensor.ev9_ev_battery, lock.ev9_door_lock, etc.
+#   - EV6 EMMA:  sensor.ev6_emma_ev_battery, lock.ev6_emma_door_lock, etc.
+#   - EV6 Ava:   sensor.ev6_ava_ev_battery, lock.ev6_ava_door_lock, etc.
+#
+# AVAILABLE ENTITY TYPES:
+#   Sensors: ev_battery, odometer, last_synced_to_cloud, last_synced_from_cloud,
+#            next_service_mile, climate_temperature_value, ev_charge_current_remaining_duration,
+#            ev_remaining_range_value, car_battery_level (12v), seat sensors
+#   Binary Sensors: doors_locked, door_hood_open, door_trunk_open, door_front_left_open,
+#                   door_front_right_open, door_back_left_open, door_back_right_open,
+#                   engine_on, tire_all_on, climate_hvac_on, climate_defrost_on,
+#                   ev_battery_charging, ev_plugged_in
+#   Lock: door_lock
+#   Climate: climate
+#   Device Tracker: location
+#   Switches: ev_battery_charging (charging), climate_desired_defrost, climate_desired_heating_acc
+#   Button: request_vehicle_data_sync
+#
+# AVAILABLE SERVICES:
+#   ha_kia_hyundai.start_climate - Start climate with temp/defrost/heating/seats
+#   ha_kia_hyundai.set_charge_limits - Set AC/DC charge limits (50-100%)
+#   lock.lock / lock.unlock - Lock/unlock vehicle
+#   switch.turn_on / switch.turn_off - Start/stop charging
+#
+# =============================================================================
+
+# =============================================================================
+# SECTION 1: AUTO-LOCK AUTOMATIONS
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1.1 Auto-lock when leaving home zone
+# -----------------------------------------------------------------------------
+- id: auto_lock_ev9_leaving_home
+  alias: "EV9 - Auto Lock When Leaving Home"
+  description: "Automatically lock EV9 when it leaves the home zone"
+  mode: single
+  trigger:
+    - platform: zone
+      entity_id: device_tracker.ev9_location
+      zone: zone.home
+      event: leave
+  condition:
+    - condition: state
+      entity_id: binary_sensor.ev9_locked
+      state: "on"  # "on" means unlocked (door open logic)
+  action:
+    - service: lock.lock
+      target:
+        entity_id: lock.ev9_door_lock
+    - service: notify.mobile_app_your_phone  # Replace with your notify service
+      data:
+        title: "EV9 Auto-Locked"
+        message: "Your EV9 was automatically locked after leaving home."
+
+- id: auto_lock_ev6_emma_leaving_home
+  alias: "EV6 EMMA - Auto Lock When Leaving Home"
+  description: "Automatically lock EV6 EMMA when it leaves the home zone"
+  mode: single
+  trigger:
+    - platform: zone
+      entity_id: device_tracker.ev6_emma_location
+      zone: zone.home
+      event: leave
+  condition:
+    - condition: state
+      entity_id: binary_sensor.ev6_emma_locked
+      state: "on"
+  action:
+    - service: lock.lock
+      target:
+        entity_id: lock.ev6_emma_door_lock
+
+- id: auto_lock_ev6_ava_leaving_home
+  alias: "EV6 Ava - Auto Lock When Leaving Home"
+  description: "Automatically lock EV6 Ava when it leaves the home zone"
+  mode: single
+  trigger:
+    - platform: zone
+      entity_id: device_tracker.ev6_ava_location
+      zone: zone.home
+      event: leave
+  condition:
+    - condition: state
+      entity_id: binary_sensor.ev6_ava_locked
+      state: "on"
+  action:
+    - service: lock.lock
+      target:
+        entity_id: lock.ev6_ava_door_lock
+
+# -----------------------------------------------------------------------------
+# 1.2 Auto-lock at night if parked at home and unlocked
+# -----------------------------------------------------------------------------
+- id: auto_lock_all_vehicles_night
+  alias: "All Vehicles - Auto Lock at Night"
+  description: "Lock all vehicles at 11 PM if they're home and unlocked"
+  mode: single
+  trigger:
+    - platform: time
+      at: "23:00:00"
+  action:
+    - if:
+        - condition: and
+          conditions:
+            - condition: zone
+              entity_id: device_tracker.ev9_location
+              zone: zone.home
+            - condition: state
+              entity_id: binary_sensor.ev9_locked
+              state: "on"
+      then:
+        - service: lock.lock
+          target:
+            entity_id: lock.ev9_door_lock
+    - if:
+        - condition: and
+          conditions:
+            - condition: zone
+              entity_id: device_tracker.ev6_emma_location
+              zone: zone.home
+            - condition: state
+              entity_id: binary_sensor.ev6_emma_locked
+              state: "on"
+      then:
+        - service: lock.lock
+          target:
+            entity_id: lock.ev6_emma_door_lock
+    - if:
+        - condition: and
+          conditions:
+            - condition: zone
+              entity_id: device_tracker.ev6_ava_location
+              zone: zone.home
+            - condition: state
+              entity_id: binary_sensor.ev6_ava_locked
+              state: "on"
+      then:
+        - service: lock.lock
+          target:
+            entity_id: lock.ev6_ava_door_lock
+
+# -----------------------------------------------------------------------------
+# 1.3 Alert if vehicle left unlocked for 30 minutes
+# -----------------------------------------------------------------------------
+- id: alert_ev9_unlocked_too_long
+  alias: "EV9 - Alert If Unlocked 30 Minutes"
+  description: "Send notification if EV9 remains unlocked for 30 minutes"
+  mode: single
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.ev9_locked
+      to: "on"  # unlocked
+      for:
+        minutes: 30
+  action:
+    - service: notify.mobile_app_your_phone
+      data:
+        title: "EV9 Still Unlocked"
+        message: "Your EV9 has been unlocked for 30 minutes. Would you like to lock it?"
+        data:
+          actions:
+            - action: LOCK_EV9
+              title: "Lock Now"
+
+# =============================================================================
+# SECTION 2: CLIMATE PRE-CONDITIONING AUTOMATIONS
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 2.1 Morning pre-condition on weekdays
+# -----------------------------------------------------------------------------
+- id: precondition_ev9_weekday_morning
+  alias: "EV9 - Morning Pre-Condition (Weekdays)"
+  description: "Pre-condition EV9 at 7:00 AM on weekdays"
+  mode: single
+  trigger:
+    - platform: time
+      at: "07:00:00"
+  condition:
+    - condition: time
+      weekday:
+        - mon
+        - tue
+        - wed
+        - thu
+        - fri
+    - condition: zone
+      entity_id: device_tracker.ev9_location
+      zone: zone.home
+    # Optional: Only if battery is sufficient
+    - condition: numeric_state
+      entity_id: sensor.ev9_ev_battery
+      above: 30
+  action:
+    - service: ha_kia_hyundai.start_climate
+      data:
+        device_id: !input ev9_device_id  # Replace with actual device ID from HA
+        climate: true
+        temperature: 72
+        defrost: false
+        heating: true
+        driver_seat: "Medium Heat"
+
+# -----------------------------------------------------------------------------
+# 2.2 Cold weather pre-condition with defrost
+# -----------------------------------------------------------------------------
+- id: precondition_ev6_emma_cold_weather
+  alias: "EV6 EMMA - Cold Weather Pre-Condition"
+  description: "Pre-condition with defrost when outdoor temp is below 35°F"
+  mode: single
+  trigger:
+    - platform: time
+      at: "07:15:00"
+  condition:
+    - condition: numeric_state
+      entity_id: sensor.outdoor_temperature  # Replace with your weather sensor
+      below: 35
+    - condition: zone
+      entity_id: device_tracker.ev6_emma_location
+      zone: zone.home
+    - condition: numeric_state
+      entity_id: sensor.ev6_emma_ev_battery
+      above: 25
+  action:
+    - service: ha_kia_hyundai.start_climate
+      data:
+        device_id: !input ev6_emma_device_id
+        climate: true
+        temperature: 74
+        defrost: true
+        heating: true
+        driver_seat: "High Heat"
+        passenger_seat: "Medium Heat"
+
+# -----------------------------------------------------------------------------
+# 2.3 Hot weather pre-condition (cooling)
+# -----------------------------------------------------------------------------
+- id: precondition_ev6_ava_hot_weather
+  alias: "EV6 Ava - Hot Weather Pre-Condition"
+  description: "Pre-condition with cooling when outdoor temp is above 80°F"
+  mode: single
+  trigger:
+    - platform: time
+      at: "16:30:00"  # Before evening commute
+  condition:
+    - condition: numeric_state
+      entity_id: sensor.outdoor_temperature
+      above: 80
+    - condition: zone
+      entity_id: device_tracker.ev6_ava_location
+      zone: zone.work  # Define your work zone
+    - condition: numeric_state
+      entity_id: sensor.ev6_ava_ev_battery
+      above: 30
+  action:
+    - service: ha_kia_hyundai.start_climate
+      data:
+        device_id: !input ev6_ava_device_id
+        climate: true
+        temperature: 68
+        defrost: false
+        heating: false
+        driver_seat: "Medium Cool"
+
+# -----------------------------------------------------------------------------
+# 2.4 Pre-condition via button/input helper
+# -----------------------------------------------------------------------------
+- id: precondition_ev9_manual_trigger
+  alias: "EV9 - Manual Pre-Condition Trigger"
+  description: "Start pre-conditioning when button is pressed"
+  mode: single
+  trigger:
+    - platform: state
+      entity_id: input_button.precondition_ev9  # Create this helper in HA
+      to: ~
+  condition:
+    - condition: numeric_state
+      entity_id: sensor.ev9_ev_battery
+      above: 20
+  action:
+    - service: ha_kia_hyundai.start_climate
+      data:
+        device_id: !input ev9_device_id
+        climate: true
+        temperature: "{{ states('input_number.ev9_climate_temp') | int(72) }}"
+        defrost: "{{ is_state('input_boolean.ev9_defrost', 'on') }}"
+        heating: "{{ is_state('input_boolean.ev9_heating', 'on') }}"
+
+# =============================================================================
+# SECTION 3: CHARGING AUTOMATIONS
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 3.1 Start charging during off-peak hours
+# -----------------------------------------------------------------------------
+- id: charging_ev9_offpeak_start
+  alias: "EV9 - Start Off-Peak Charging"
+  description: "Start charging at midnight during off-peak electricity rates"
+  mode: single
+  trigger:
+    - platform: time
+      at: "00:00:00"
+  condition:
+    - condition: state
+      entity_id: binary_sensor.ev9_ev_plugged_in
+      state: "on"
+    - condition: state
+      entity_id: binary_sensor.ev9_ev_battery_charging
+      state: "off"
+    - condition: numeric_state
+      entity_id: sensor.ev9_ev_battery
+      below: 80  # Only charge if below target
+    - condition: zone
+      entity_id: device_tracker.ev9_location
+      zone: zone.home
+  action:
+    - service: switch.turn_on
+      target:
+        entity_id: switch.ev9_ev_battery_charging
+
+# -----------------------------------------------------------------------------
+# 3.2 Stop charging at target level or peak hours
+# -----------------------------------------------------------------------------
+- id: charging_ev9_offpeak_stop
+  alias: "EV9 - Stop Charging at Peak Hours or Target"
+  description: "Stop charging at 6 AM (peak rates) or when reaching 80%"
+  mode: restart
+  trigger:
+    - platform: time
+      at: "06:00:00"
+      id: peak_hours
+    - platform: numeric_state
+      entity_id: sensor.ev9_ev_battery
+      above: 80
+      id: target_reached
+  condition:
+    - condition: state
+      entity_id: binary_sensor.ev9_ev_battery_charging
+      state: "on"
+  action:
+    - service: switch.turn_off
+      target:
+        entity_id: switch.ev9_ev_battery_charging
+    - service: notify.mobile_app_your_phone
+      data:
+        title: "EV9 Charging Stopped"
+        message: >-
+          {% if trigger.id == 'peak_hours' %}
+          Charging stopped at {{ states('sensor.ev9_ev_battery') }}% due to peak hours.
+          {% else %}
+          Charging complete at {{ states('sensor.ev9_ev_battery') }}%.
+          {% endif %}
+
+# -----------------------------------------------------------------------------
+# 3.3 Set charge limits based on trip planning
+# -----------------------------------------------------------------------------
+- id: charging_set_limits_for_trip
+  alias: "All Vehicles - Set 100% Charge Limit for Trip"
+  description: "Set charge limits to 100% when trip mode is enabled"
+  mode: single
+  trigger:
+    - platform: state
+      entity_id: input_boolean.road_trip_mode  # Create this helper
+      to: "on"
+  action:
+    - service: ha_kia_hyundai.set_charge_limits
+      data:
+        device_id: !input ev9_device_id
+        dc_limit: 100
+        ac_limit: 100
+    - service: ha_kia_hyundai.set_charge_limits
+      data:
+        device_id: !input ev6_emma_device_id
+        dc_limit: 100
+        ac_limit: 100
+    - service: ha_kia_hyundai.set_charge_limits
+      data:
+        device_id: !input ev6_ava_device_id
+        dc_limit: 100
+        ac_limit: 100
+
+# -----------------------------------------------------------------------------
+# 3.4 Reset charge limits after trip
+# -----------------------------------------------------------------------------
+- id: charging_reset_limits_after_trip
+  alias: "All Vehicles - Reset Charge Limits After Trip"
+  description: "Reset charge limits to 80% when trip mode is disabled"
+  mode: single
+  trigger:
+    - platform: state
+      entity_id: input_boolean.road_trip_mode
+      to: "off"
+  action:
+    - service: ha_kia_hyundai.set_charge_limits
+      data:
+        device_id: !input ev9_device_id
+        dc_limit: 80
+        ac_limit: 80
+    - service: ha_kia_hyundai.set_charge_limits
+      data:
+        device_id: !input ev6_emma_device_id
+        dc_limit: 80
+        ac_limit: 80
+    - service: ha_kia_hyundai.set_charge_limits
+      data:
+        device_id: !input ev6_ava_device_id
+        dc_limit: 80
+        ac_limit: 80
+
+# -----------------------------------------------------------------------------
+# 3.5 Low battery alert
+# -----------------------------------------------------------------------------
+- id: alert_ev9_low_battery
+  alias: "EV9 - Low Battery Alert"
+  description: "Alert when EV9 battery drops below 20%"
+  mode: single
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.ev9_ev_battery
+      below: 20
+  condition:
+    - condition: state
+      entity_id: binary_sensor.ev9_ev_battery_charging
+      state: "off"
+  action:
+    - service: notify.mobile_app_your_phone
+      data:
+        title: "EV9 Low Battery!"
+        message: "Battery at {{ states('sensor.ev9_ev_battery') }}%. Range: {{ states('sensor.ev9_ev_remaining_range_value') }} miles."
+        data:
+          priority: high
+          ttl: 0
+
+# -----------------------------------------------------------------------------
+# 3.6 Notify when charging completes
+# -----------------------------------------------------------------------------
+- id: notify_ev6_emma_charging_complete
+  alias: "EV6 EMMA - Charging Complete Notification"
+  description: "Notify when EV6 EMMA finishes charging"
+  mode: single
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.ev6_emma_ev_battery_charging
+      from: "on"
+      to: "off"
+  condition:
+    - condition: state
+      entity_id: binary_sensor.ev6_emma_ev_plugged_in
+      state: "on"  # Still plugged in, so charging finished vs unplugged
+  action:
+    - service: notify.mobile_app_your_phone
+      data:
+        title: "EV6 EMMA Charging Complete"
+        message: "Battery at {{ states('sensor.ev6_emma_ev_battery') }}%. Range: {{ states('sensor.ev6_emma_ev_remaining_range_value') }} miles."
+
+# =============================================================================
+# SECTION 4: GEOFENCING AUTOMATIONS
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 4.1 Welcome home - garage door + lights
+# -----------------------------------------------------------------------------
+- id: geofence_ev9_arriving_home
+  alias: "EV9 - Arriving Home"
+  description: "Open garage and turn on lights when EV9 arrives home"
+  mode: single
+  trigger:
+    - platform: zone
+      entity_id: device_tracker.ev9_location
+      zone: zone.home
+      event: enter
+  condition:
+    - condition: sun
+      after: sunset
+  action:
+    - service: cover.open_cover
+      target:
+        entity_id: cover.garage_door  # Replace with your garage entity
+    - service: light.turn_on
+      target:
+        entity_id: light.garage_lights  # Replace with your light entity
+    - delay:
+        minutes: 5
+    - service: cover.close_cover
+      target:
+        entity_id: cover.garage_door
+
+# -----------------------------------------------------------------------------
+# 4.2 Leaving work notification
+# -----------------------------------------------------------------------------
+- id: geofence_ev6_emma_leaving_work
+  alias: "EV6 EMMA - Leaving Work"
+  description: "Notify family when EV6 EMMA leaves work zone"
+  mode: single
+  trigger:
+    - platform: zone
+      entity_id: device_tracker.ev6_emma_location
+      zone: zone.work
+      event: leave
+  action:
+    - service: notify.mobile_app_family_phone
+      data:
+        title: "On the way home"
+        message: "EV6 EMMA just left work. ETA ~{{ states('sensor.ev6_emma_ev_remaining_range_value') | int // 30 }} minutes."
+
+# -----------------------------------------------------------------------------
+# 4.3 Vehicle location tracking for teens/family
+# -----------------------------------------------------------------------------
+- id: geofence_ev6_ava_school_arrival
+  alias: "EV6 Ava - School Zone Arrival"
+  description: "Notify when EV6 Ava arrives at school"
+  mode: single
+  trigger:
+    - platform: zone
+      entity_id: device_tracker.ev6_ava_location
+      zone: zone.school  # Define school zone
+      event: enter
+  action:
+    - service: notify.mobile_app_parent_phone
+      data:
+        title: "Ava Arrived at School"
+        message: "EV6 Ava arrived at school at {{ now().strftime('%I:%M %p') }}."
+
+# -----------------------------------------------------------------------------
+# 4.4 Unusual location alert (vehicle moved unexpectedly)
+# -----------------------------------------------------------------------------
+- id: alert_ev9_unexpected_movement
+  alias: "EV9 - Unexpected Movement Alert"
+  description: "Alert if EV9 moves during quiet hours"
+  mode: single
+  trigger:
+    - platform: zone
+      entity_id: device_tracker.ev9_location
+      zone: zone.home
+      event: leave
+  condition:
+    - condition: time
+      after: "23:00:00"
+      before: "06:00:00"
+  action:
+    - service: notify.mobile_app_your_phone
+      data:
+        title: "EV9 Alert: Unexpected Movement!"
+        message: "Your EV9 left home at {{ now().strftime('%I:%M %p') }}."
+        data:
+          priority: high
+          ttl: 0
+
+# =============================================================================
+# SECTION 5: MAINTENANCE & MONITORING AUTOMATIONS
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 5.1 12V battery low alert
+# -----------------------------------------------------------------------------
+- id: alert_ev9_12v_battery_low
+  alias: "EV9 - 12V Battery Low Alert"
+  description: "Alert when 12V battery drops below 50%"
+  mode: single
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.ev9_car_battery_level
+      below: 50
+  action:
+    - service: notify.mobile_app_your_phone
+      data:
+        title: "EV9 12V Battery Low"
+        message: "12V battery at {{ states('sensor.ev9_car_battery_level') }}%. Consider running the vehicle or checking the battery."
+
+# -----------------------------------------------------------------------------
+# 5.2 Tire pressure alert
+# -----------------------------------------------------------------------------
+- id: alert_ev6_emma_tire_pressure
+  alias: "EV6 EMMA - Tire Pressure Alert"
+  description: "Alert when tire pressure problem detected"
+  mode: single
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.ev6_emma_tire_all_on
+      to: "on"
+  action:
+    - service: notify.mobile_app_your_phone
+      data:
+        title: "EV6 EMMA Tire Alert"
+        message: "Tire pressure issue detected. Please check your tires."
+
+# -----------------------------------------------------------------------------
+# 5.3 Service reminder based on odometer
+# -----------------------------------------------------------------------------
+- id: alert_ev6_ava_service_reminder
+  alias: "EV6 Ava - Service Reminder"
+  description: "Remind when approaching service interval"
+  mode: single
+  trigger:
+    - platform: template
+      value_template: >-
+        {{ (states('sensor.ev6_ava_odometer') | float) >= 
+           (states('sensor.ev6_ava_next_service_mile') | float - 500) }}
+  action:
+    - service: notify.mobile_app_your_phone
+      data:
+        title: "EV6 Ava Service Soon"
+        message: "Service due in {{ (states('sensor.ev6_ava_next_service_mile') | float - states('sensor.ev6_ava_odometer') | float) | round(0) }} miles."
+
+# -----------------------------------------------------------------------------
+# 5.4 Door left open alert
+# -----------------------------------------------------------------------------
+- id: alert_ev9_door_open
+  alias: "EV9 - Door Left Open Alert"
+  description: "Alert if any door is left open for 10 minutes"
+  mode: single
+  trigger:
+    - platform: state
+      entity_id:
+        - binary_sensor.ev9_door_front_left_open
+        - binary_sensor.ev9_door_front_right_open
+        - binary_sensor.ev9_door_back_left_open
+        - binary_sensor.ev9_door_back_right_open
+        - binary_sensor.ev9_door_trunk_open
+        - binary_sensor.ev9_door_hood_open
+      to: "on"
+      for:
+        minutes: 10
+  action:
+    - service: notify.mobile_app_your_phone
+      data:
+        title: "EV9 Door Open"
+        message: "A door has been open for 10 minutes on your EV9."
+
+# =============================================================================
+# SECTION 6: SMART SCHEDULES & CONDITIONAL LOGIC
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 6.1 Weekend vs Weekday charging schedule
+# -----------------------------------------------------------------------------
+- id: charging_ev9_weekend_schedule
+  alias: "EV9 - Weekend Charging Schedule"
+  description: "Different charging behavior on weekends"
+  mode: single
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.ev9_ev_plugged_in
+      to: "on"
+  condition:
+    - condition: time
+      weekday:
+        - sat
+        - sun
+    - condition: zone
+      entity_id: device_tracker.ev9_location
+      zone: zone.home
+  action:
+    # On weekends, charge immediately up to 80%
+    - service: switch.turn_on
+      target:
+        entity_id: switch.ev9_ev_battery_charging
+    - wait_template: "{{ states('sensor.ev9_ev_battery') | int >= 80 }}"
+      timeout: "04:00:00"
+    - service: switch.turn_off
+      target:
+        entity_id: switch.ev9_ev_battery_charging
+
+# -----------------------------------------------------------------------------
+# 6.2 Seasonal climate presets
+# -----------------------------------------------------------------------------
+- id: precondition_seasonal_ev9
+  alias: "EV9 - Seasonal Climate Preset"
+  description: "Adjust pre-conditioning based on season"
+  mode: single
+  trigger:
+    - platform: time
+      at: "07:00:00"
+  condition:
+    - condition: time
+      weekday:
+        - mon
+        - tue
+        - wed
+        - thu
+        - fri
+    - condition: zone
+      entity_id: device_tracker.ev9_location
+      zone: zone.home
+    - condition: numeric_state
+      entity_id: sensor.ev9_ev_battery
+      above: 30
+  action:
+    - choose:
+        # Winter: Heat + Defrost + Heated seats
+        - conditions:
+            - condition: numeric_state
+              entity_id: sensor.outdoor_temperature
+              below: 40
+          sequence:
+            - service: ha_kia_hyundai.start_climate
+              data:
+                device_id: !input ev9_device_id
+                climate: true
+                temperature: 74
+                defrost: true
+                heating: true
+                driver_seat: "High Heat"
+                passenger_seat: "Medium Heat"
+        # Summer: Cool + Cooled seats
+        - conditions:
+            - condition: numeric_state
+              entity_id: sensor.outdoor_temperature
+              above: 75
+          sequence:
+            - service: ha_kia_hyundai.start_climate
+              data:
+                device_id: !input ev9_device_id
+                climate: true
+                temperature: 68
+                defrost: false
+                heating: false
+                driver_seat: "Medium Cool"
+      # Default: Moderate climate
+      default:
+        - service: ha_kia_hyundai.start_climate
+          data:
+            device_id: !input ev9_device_id
+            climate: true
+            temperature: 72
+            defrost: false
+            heating: false
+
+# =============================================================================
+# SECTION 7: MULTI-VEHICLE COORDINATION
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 7.1 Stagger charging to avoid circuit overload
+# -----------------------------------------------------------------------------
+- id: charging_stagger_multiple_vehicles
+  alias: "All Vehicles - Staggered Charging"
+  description: "Charge vehicles one at a time to avoid overloading home circuit"
+  mode: restart
+  trigger:
+    - platform: time
+      at: "00:00:00"
+  condition: []
+  action:
+    # Check and charge EV9 first
+    - if:
+        - condition: and
+          conditions:
+            - condition: state
+              entity_id: binary_sensor.ev9_ev_plugged_in
+              state: "on"
+            - condition: numeric_state
+              entity_id: sensor.ev9_ev_battery
+              below: 80
+      then:
+        - service: switch.turn_on
+          target:
+            entity_id: switch.ev9_ev_battery_charging
+        - wait_template: "{{ states('sensor.ev9_ev_battery') | int >= 80 or is_state('binary_sensor.ev9_ev_battery_charging', 'off') }}"
+          timeout: "03:00:00"
+        - service: switch.turn_off
+          target:
+            entity_id: switch.ev9_ev_battery_charging
+    
+    # Then charge EV6 EMMA
+    - if:
+        - condition: and
+          conditions:
+            - condition: state
+              entity_id: binary_sensor.ev6_emma_ev_plugged_in
+              state: "on"
+            - condition: numeric_state
+              entity_id: sensor.ev6_emma_ev_battery
+              below: 80
+      then:
+        - service: switch.turn_on
+          target:
+            entity_id: switch.ev6_emma_ev_battery_charging
+        - wait_template: "{{ states('sensor.ev6_emma_ev_battery') | int >= 80 or is_state('binary_sensor.ev6_emma_ev_battery_charging', 'off') }}"
+          timeout: "03:00:00"
+        - service: switch.turn_off
+          target:
+            entity_id: switch.ev6_emma_ev_battery_charging
+    
+    # Finally charge EV6 Ava
+    - if:
+        - condition: and
+          conditions:
+            - condition: state
+              entity_id: binary_sensor.ev6_ava_ev_plugged_in
+              state: "on"
+            - condition: numeric_state
+              entity_id: sensor.ev6_ava_ev_battery
+              below: 80
+      then:
+        - service: switch.turn_on
+          target:
+            entity_id: switch.ev6_ava_ev_battery_charging
+
+# -----------------------------------------------------------------------------
+# 7.2 Daily vehicle status summary
+# -----------------------------------------------------------------------------
+- id: summary_all_vehicles_daily
+  alias: "All Vehicles - Daily Status Summary"
+  description: "Send daily summary of all vehicle statuses"
+  mode: single
+  trigger:
+    - platform: time
+      at: "08:00:00"
+  action:
+    - service: notify.mobile_app_your_phone
+      data:
+        title: "Daily Vehicle Status"
+        message: >-
+          🚗 EV9: {{ states('sensor.ev9_ev_battery') }}% | {{ states('sensor.ev9_ev_remaining_range_value') }} mi
+          🚙 EMMA: {{ states('sensor.ev6_emma_ev_battery') }}% | {{ states('sensor.ev6_emma_ev_remaining_range_value') }} mi
+          🚘 Ava: {{ states('sensor.ev6_ava_ev_battery') }}% | {{ states('sensor.ev6_ava_ev_remaining_range_value') }} mi
+
+# =============================================================================
+# HELPER ENTITIES TO CREATE IN HOME ASSISTANT
+# =============================================================================
+# Add these to your configuration.yaml or via UI:
+#
+# input_boolean:
+#   road_trip_mode:
+#     name: Road Trip Mode
+#     icon: mdi:car-sports
+#   ev9_defrost:
+#     name: EV9 Defrost Enabled
+#     icon: mdi:car-defrost-front
+#   ev9_heating:
+#     name: EV9 Heating Enabled
+#     icon: mdi:steering
+#
+# input_number:
+#   ev9_climate_temp:
+#     name: EV9 Climate Temperature
+#     min: 62
+#     max: 82
+#     step: 1
+#     unit_of_measurement: "°F"
+#     icon: mdi:thermometer
+#
+# input_button:
+#   precondition_ev9:
+#     name: Pre-Condition EV9
+#     icon: mdi:car-electric
+#   precondition_ev6_emma:
+#     name: Pre-Condition EV6 EMMA
+#     icon: mdi:car-electric
+#   precondition_ev6_ava:
+#     name: Pre-Condition EV6 Ava
+#     icon: mdi:car-electric
+#
+# zone:
+#   - name: Work
+#     latitude: YOUR_WORK_LAT
+#     longitude: YOUR_WORK_LONG
+#     radius: 200
+#     icon: mdi:office-building
+#   - name: School
+#     latitude: SCHOOL_LAT
+#     longitude: SCHOOL_LONG
+#     radius: 150
+#     icon: mdi:school
+
+# =============================================================================
+# FINDING YOUR DEVICE IDs
+# =============================================================================
+# To find your device IDs for the ha_kia_hyundai services:
+# 1. Go to Developer Tools > Services in Home Assistant
+# 2. Select "ha_kia_hyundai.start_climate"
+# 3. Use the device dropdown to select your vehicle
+# 4. Click "Go to YAML mode" - the device_id will be shown
+# 
+# Or use this template in Developer Tools > Templates:
+# {% for device in device_attr('ha_kia_hyundai', 'identifiers') %}
+#   {{ device }}
+# {% endfor %}
