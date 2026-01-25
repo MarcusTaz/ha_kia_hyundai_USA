@@ -3,10 +3,10 @@
   "name": "Kia/Hyundai/Genesis (USA)",
   "codeowners": ["@MarcusTaz"],
   "config_flow": true,
-  "documentation": "https://github.com/MarcusTaz/ha_kia_hyundai",
+  "documentation": "https://github.com/MarcusTaz/ha_kia_hyundai_USA",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/MarcusTaz/ha_kia_hyundai/issues",
+  "issue_tracker": "https://github.com/MarcusTaz/ha_kia_hyundai_USA/issues",
   "loggers": ["ha_kia_hyundai", "kia_hyundai_api"],
-  "requirements": [],
+  "requirements": ["pytz>=2021.3"],
   "version": "2.0.0"
 }

@@ -1,8 +1,8 @@
 # Kia Hyundai Genesis (USA) - Community Maintained
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-[![GitHub Release](https://img.shields.io/github/release/MarcusTaz/ha_kia_hyundai.svg)](https://github.com/MarcusTaz/ha_kia_hyundai/releases)
-[![License](https://img.shields.io/github/license/MarcusTaz/ha_kia_hyundai.svg)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/release/MarcusTaz/ha_kia_hyundai_USA.svg)](https://github.com/MarcusTaz/ha_kia_hyundai_USA/releases)
+[![License](https://img.shields.io/github/license/MarcusTaz/ha_kia_hyundai_USA.svg)](LICENSE)
 
 A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles (USA)** with full authentication support. This is a community-maintained fork that fixes critical issues after the original repository was archived.
 
@@ -42,7 +42,7 @@ The original [dahlb/ha_kia_hyundai](https://github.com/dahlb/ha_kia_hyundai) rep
 1. Open **HACS** in Home Assistant
 2. Click the **three dots** (⋮) in the top right
 3. Select **"Custom repositories"**
-4. Add this repository URL: `https://github.com/MarcusTaz/ha_kia_hyundai`
+4. Add this repository URL: `https://github.com/MarcusTaz/ha_kia_hyundai_USA`
 5. Category: **Integration**
 6. Click **"Add"**
 7. Search for **"Kia Hyundai Genesis (USA)"** and install
@@ -205,8 +205,8 @@ This integration is not affiliated with, endorsed by, or connected to Kia Motors
 
 ## 🔧 Support
 
-- **Issues**: [GitHub Issues](https://github.com/MarcusTaz/ha_kia_hyundai/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/MarcusTaz/ha_kia_hyundai/discussions)
+- **Issues**: [GitHub Issues](https://github.com/MarcusTaz/ha_kia_hyundai_USA/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/MarcusTaz/ha_kia_hyundai_USA/discussions)
 
 ---
 
