@@ -6,7 +6,7 @@ from homeassistant.const import ATTR_DEVICE_ID
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import device_registry
 
-from .const import DOMAIN, STR_TO_SEAT_SETTING
+from .const import DOMAIN, STR_TO_SEAT_SETTING, STR_TO_STEERING_WHEEL
 from .vehicle_coordinator import VehicleCoordinator
 
 # Key for coordinators in hass.data
@@ -20,6 +20,7 @@ SERVICE_ATTRIBUTE_TEMPERATURE = "temperature"
 SERVICE_ATTRIBUTE_DEFROST = "defrost"
 SERVICE_ATTRIBUTE_HEATING = "heating"
 SERVICE_ATTRIBUTE_DURATION = "duration"
+SERVICE_ATTRIBUTE_STEERING_WHEEL = "steering_wheel"
 SERVICE_ATTRIBUTE_DRIVER_SEAT = "driver_seat"
 SERVICE_ATTRIBUTE_PASSENGER_SEAT = "passenger_seat"
 SERVICE_ATTRIBUTE_LEFT_REAR_SEAT = "left_rear_seat"
@@ -41,15 +42,25 @@ def async_setup_services(hass: HomeAssistant):
         defrost = call.data.get(SERVICE_ATTRIBUTE_DEFROST)
         heating = call.data.get(SERVICE_ATTRIBUTE_HEATING)
         duration = call.data.get(SERVICE_ATTRIBUTE_DURATION)
+        steering_wheel = call.data.get(SERVICE_ATTRIBUTE_STEERING_WHEEL)
         driver_seat = call.data.get(SERVICE_ATTRIBUTE_DRIVER_SEAT, None)
         passenger_seat = call.data.get(SERVICE_ATTRIBUTE_PASSENGER_SEAT, None)
         left_rear_seat = call.data.get(SERVICE_ATTRIBUTE_LEFT_REAR_SEAT, None)
         right_rear_seat = call.data.get(SERVICE_ATTRIBUTE_RIGHT_REAR_SEAT, None)
 
+        _LOGGER.info("===== SERVICE start_climate CALLED =====")
+        _LOGGER.info(
+            "Raw service call data: climate=%s, temp=%s, duration=%s, steering_wheel=%s, "
+            "driver_seat=%s, defrost=%s, heating=%s",
+            climate, set_temp, duration, steering_wheel, driver_seat, defrost, heating
+        )
+
         if set_temp is not None:
             set_temp = int(set_temp)
         if duration is not None:
             duration = int(duration)
+        if steering_wheel is not None:
+            steering_wheel = STR_TO_STEERING_WHEEL.get(steering_wheel, 0)
         if driver_seat is not None:
             driver_seat = STR_TO_SEAT_SETTING[driver_seat]
         if passenger_seat is not None:
@@ -59,7 +70,7 @@ def async_setup_services(hass: HomeAssistant):
         if right_rear_seat is not None:
             right_rear_seat = STR_TO_SEAT_SETTING[right_rear_seat]
 
-        # Build kwargs, only include duration if specified (otherwise API defaults to 10)
+        # Build kwargs, only include optional params if specified
         kwargs = {
             "vehicle_id": coordinator.vehicle_id,
             "climate": bool(climate),
@@ -73,6 +84,10 @@ def async_setup_services(hass: HomeAssistant):
         }
         if duration is not None:
             kwargs["duration"] = duration
+        if steering_wheel is not None:
+            kwargs["steering_wheel_heat"] = steering_wheel
+
+        _LOGGER.info("Final kwargs being sent to API: %s", kwargs)
 
         await coordinator.api_connection.start_climate(**kwargs)
         coordinator.async_update_listeners()

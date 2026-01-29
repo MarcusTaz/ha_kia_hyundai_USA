@@ -44,6 +44,16 @@ start_climate:
           step: 1
           mode: box
           unit_of_measurement: minutes
+    steering_wheel:
+      required: false
+      example: Low
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - "Off"
+            - "Low"
+            - "High"
     driver_seat:
       required: false
       example: High Heat

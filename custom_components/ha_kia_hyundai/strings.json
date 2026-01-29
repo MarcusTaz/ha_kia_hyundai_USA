@@ -75,6 +75,10 @@
           "name": "Duration",
           "description": "How long to run climate in minutes. Vehicle limits vary by model (typically 5-30 minutes)."
         },
+        "steering_wheel": {
+          "name": "Steering Wheel Heat",
+          "description": "Steering wheel heater setting (Off, Low, High). Availability depends on vehicle."
+        },
         "driver_seat": {
           "name": "Driver's Seat",
           "description": "Driver's seat controls."

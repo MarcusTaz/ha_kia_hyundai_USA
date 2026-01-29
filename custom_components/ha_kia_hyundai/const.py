@@ -93,3 +93,12 @@ STR_TO_SEAT_SETTING = {
     "Medium Cool": SeatSettings.CoolMedium,
     "Low Cool": SeatSettings.CoolLow,
 }
+
+# Steering wheel heat mapping: string -> API value
+# 0=off, 1=low/on, 2=high
+STR_TO_STEERING_WHEEL = {
+    "Off": 0,
+    "On": 1,
+    "Low": 1,
+    "High": 2,
+}
