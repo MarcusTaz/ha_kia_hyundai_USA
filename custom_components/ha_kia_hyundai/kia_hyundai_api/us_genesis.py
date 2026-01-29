@@ -681,6 +681,7 @@ class UsGenesis:
             climate: bool,
             heating: bool,
             steering_wheel_heat: int = 0,
+            duration: int = 10,
             driver_seat: SeatSettings | None = None,
             passenger_seat: SeatSettings | None = None,
             left_rear_seat: SeatSettings | None = None,
@@ -689,8 +690,8 @@ class UsGenesis:
         """Start climate control."""
         _LOGGER.info("===== GENESIS START_CLIMATE CALLED =====")
         _LOGGER.info(
-            "start_climate params: temp=%s, defrost=%s, climate=%s, heating=%s, steering_wheel=%s",
-            set_temp, defrost, climate, heating, steering_wheel_heat
+            "start_climate params: temp=%s, defrost=%s, climate=%s, heating=%s, steering_wheel=%s, duration=%s",
+            set_temp, defrost, climate, heating, steering_wheel_heat, duration
         )
         
         await self._ensure_token_valid()
@@ -714,7 +715,7 @@ class UsGenesis:
                 "heating1": int(heating),
             }
             if generation >= 3:
-                data["igniOnDuration"] = 10
+                data["igniOnDuration"] = duration
                 data["seatHeaterVentInfo"] = {
                     "drvSeatHeatState": _seat_settings_genesis(driver_seat, vehicle_id),
                     "astSeatHeatState": _seat_settings_genesis(passenger_seat, vehicle_id),
@@ -728,7 +729,7 @@ class UsGenesis:
                 "airTemp": {"unit": 1, "value": set_temp},
                 "defrost": defrost,
                 "heating1": int(heating),
-                "igniOnDuration": 10,
+                "igniOnDuration": duration,
                 "seatHeaterVentInfo": {
                     "drvSeatHeatState": _seat_settings_genesis(driver_seat, vehicle_id),
                     "astSeatHeatState": _seat_settings_genesis(passenger_seat, vehicle_id),

@@ -544,6 +544,7 @@ class UsKia:
             climate: bool,
             heating: bool,
             steering_wheel_heat: int = 0,
+            duration: int = 10,
             driver_seat: SeatSettings | None = None,
             passenger_seat: SeatSettings | None = None,
             left_rear_seat: SeatSettings | None = None,
@@ -552,9 +553,9 @@ class UsKia:
         _LOGGER.info("===== US_KIA START_CLIMATE CALLED =====")
         _LOGGER.info(
             "start_climate params: temp=%s, defrost=%s, climate=%s, heating=%s, steering_wheel=%s, "
-            "driver_seat=%s, passenger_seat=%s, left_rear=%s, right_rear=%s",
+            "duration=%s, driver_seat=%s, passenger_seat=%s, left_rear=%s, right_rear=%s",
             set_temp, defrost, climate, heating, steering_wheel_heat,
-            driver_seat, passenger_seat, left_rear_seat, right_rear_seat
+            duration, driver_seat, passenger_seat, left_rear_seat, right_rear_seat
         )
         if await self.check_last_action_finished(vehicle_id=vehicle_id) is False:
             raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
@@ -576,7 +577,7 @@ class UsKia:
                 },
                 "ignitionOnDuration": {
                     "unit": 4,
-                    "value": 9,
+                    "value": duration,
                 },
             }
         }

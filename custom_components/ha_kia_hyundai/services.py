@@ -19,6 +19,7 @@ SERVICE_ATTRIBUTE_CLIMATE = "climate"
 SERVICE_ATTRIBUTE_TEMPERATURE = "temperature"
 SERVICE_ATTRIBUTE_DEFROST = "defrost"
 SERVICE_ATTRIBUTE_HEATING = "heating"
+SERVICE_ATTRIBUTE_DURATION = "duration"
 SERVICE_ATTRIBUTE_DRIVER_SEAT = "driver_seat"
 SERVICE_ATTRIBUTE_PASSENGER_SEAT = "passenger_seat"
 SERVICE_ATTRIBUTE_LEFT_REAR_SEAT = "left_rear_seat"
@@ -39,6 +40,7 @@ def async_setup_services(hass: HomeAssistant):
         set_temp = call.data.get(SERVICE_ATTRIBUTE_TEMPERATURE)
         defrost = call.data.get(SERVICE_ATTRIBUTE_DEFROST)
         heating = call.data.get(SERVICE_ATTRIBUTE_HEATING)
+        duration = call.data.get(SERVICE_ATTRIBUTE_DURATION)
         driver_seat = call.data.get(SERVICE_ATTRIBUTE_DRIVER_SEAT, None)
         passenger_seat = call.data.get(SERVICE_ATTRIBUTE_PASSENGER_SEAT, None)
         left_rear_seat = call.data.get(SERVICE_ATTRIBUTE_LEFT_REAR_SEAT, None)
@@ -46,6 +48,8 @@ def async_setup_services(hass: HomeAssistant):
 
         if set_temp is not None:
             set_temp = int(set_temp)
+        if duration is not None:
+            duration = int(duration)
         if driver_seat is not None:
             driver_seat = STR_TO_SEAT_SETTING[driver_seat]
         if passenger_seat is not None:
@@ -55,17 +59,22 @@ def async_setup_services(hass: HomeAssistant):
         if right_rear_seat is not None:
             right_rear_seat = STR_TO_SEAT_SETTING[right_rear_seat]
 
-        await coordinator.api_connection.start_climate(
-            vehicle_id=coordinator.vehicle_id,
-            climate=bool(climate),
-            set_temp=set_temp,
-            defrost=bool(defrost),
-            heating=bool(heating),
-            driver_seat=driver_seat,
-            passenger_seat=passenger_seat,
-            left_rear_seat=left_rear_seat,
-            right_rear_seat=right_rear_seat,
-        )
+        # Build kwargs, only include duration if specified (otherwise API defaults to 10)
+        kwargs = {
+            "vehicle_id": coordinator.vehicle_id,
+            "climate": bool(climate),
+            "set_temp": set_temp,
+            "defrost": bool(defrost),
+            "heating": bool(heating),
+            "driver_seat": driver_seat,
+            "passenger_seat": passenger_seat,
+            "left_rear_seat": left_rear_seat,
+            "right_rear_seat": right_rear_seat,
+        }
+        if duration is not None:
+            kwargs["duration"] = duration
+
+        await coordinator.api_connection.start_climate(**kwargs)
         coordinator.async_update_listeners()
         await coordinator.async_request_refresh()
 
