@@ -693,7 +693,7 @@ class UsHyundai:
             climate: bool,
             heating: bool,
             steering_wheel_heat: int = 0,
-            duration: int = 10,
+            duration: int | None = None,
             driver_seat: SeatSettings | None = None,
             passenger_seat: SeatSettings | None = None,
             left_rear_seat: SeatSettings | None = None,
@@ -729,7 +729,8 @@ class UsHyundai:
             }
             # Generation 3+ vehicles support seat heater and duration
             if generation >= 3:
-                data["igniOnDuration"] = duration
+                if duration is not None:
+                    data["igniOnDuration"] = duration
                 data["seatHeaterVentInfo"] = {
                     "drvSeatHeatState": _seat_settings_hyundai(driver_seat, vehicle_id),
                     "astSeatHeatState": _seat_settings_hyundai(passenger_seat, vehicle_id),
@@ -744,7 +745,6 @@ class UsHyundai:
                 "airTemp": {"unit": 1, "value": set_temp},
                 "defrost": defrost,
                 "heating1": int(heating),
-                "igniOnDuration": duration,
                 "seatHeaterVentInfo": {
                     "drvSeatHeatState": _seat_settings_hyundai(driver_seat, vehicle_id),
                     "astSeatHeatState": _seat_settings_hyundai(passenger_seat, vehicle_id),
@@ -754,6 +754,9 @@ class UsHyundai:
                 "username": self.username,
                 "vin": vehicle.get("vin"),
             }
+            # Only include duration if user specified it
+            if duration is not None:
+                data["igniOnDuration"] = duration
         
         _LOGGER.debug("Hyundai start_climate data: %s", data)
         

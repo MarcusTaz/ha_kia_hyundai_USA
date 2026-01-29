@@ -544,7 +544,7 @@ class UsKia:
             climate: bool,
             heating: bool,
             steering_wheel_heat: int = 0,
-            duration: int = 10,
+            duration: int | None = None,
             driver_seat: SeatSettings | None = None,
             passenger_seat: SeatSettings | None = None,
             left_rear_seat: SeatSettings | None = None,
@@ -575,12 +575,14 @@ class UsKia:
                     "steeringWheel": 1 if steering_wheel_heat > 0 else int(heating),
                     "steeringWheelStep": steering_wheel_heat,  # 0=off, 1=low, 2=high
                 },
-                "ignitionOnDuration": {
-                    "unit": 4,
-                    "value": duration,
-                },
             }
         }
+        # Only include duration if user specified it - otherwise let vehicle use its default
+        if duration is not None:
+            body["remoteClimate"]["ignitionOnDuration"] = {
+                "unit": 4,
+                "value": duration,
+            }
         # Always include seat settings if any are provided OR if they have non-None/non-NONE values
         has_seat_settings = any([
             driver_seat is not None and driver_seat != SeatSettings.NONE,
