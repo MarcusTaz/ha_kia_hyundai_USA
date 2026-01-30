@@ -160,6 +160,25 @@ Frequent API calls can wake your vehicle and drain the 12V battery. The default 
 5. Go to Settings > System > Logs
 6. Look for entries mentioning `ha_kia_hyundai`
 
+## Known Limitations
+
+### Kia EV Climate Control
+
+For Kia electric vehicles (EV6, EV9, etc.), the remote climate API has the following behavior:
+
+**What works from Home Assistant:**
+- Starting/stopping climate
+- Seat heating and cooling settings
+- Steering wheel heat settings
+
+**What must be set in the official Kia app:**
+- Climate duration (how long climate runs)
+- Target temperature
+
+This is a Kia API limitation. The vehicle uses your "Custom Climate" profile settings stored in the official Kia Connect app for duration and temperature. To change these values, update your Custom Climate settings in the Kia app.
+
+**Workaround:** Set your preferred duration and temperature in the Kia Connect app's Custom Climate section. Home Assistant can then trigger climate start, and the vehicle will use your stored preferences.
+
 ## Update Frequency
 
 - **Default polling**: Every 10 minutes (configurable in integration options)
