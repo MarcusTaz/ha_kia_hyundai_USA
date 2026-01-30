@@ -3,7 +3,7 @@ import logging
 from functools import wraps
 from aiohttp import ClientError, ClientResponse, ContentTypeError
 
-from .errors import AuthError, ActionAlreadyInProgressError
+from .errors import AuthError, ActionAlreadyInProgressError, PINLockedError
 from .util import clean_dictionary_for_logging
 
 _LOGGER = logging.getLogger(__name__)
@@ -136,6 +136,12 @@ def request_with_logging_bluelink(func):
                 error_msg = response_json.get("errorMessage", response_json.get("errorSubMessage", "Unknown error"))
                 error_code = response_json.get("errorCode")
                 _LOGGER.debug(f"BlueLink API error: {error_code} - {error_msg}")
+                
+                # Check for PIN locked error - this is critical to detect
+                error_msg_upper = error_msg.upper() if error_msg else ""
+                if "PIN" in error_msg_upper and "LOCKED" in error_msg_upper:
+                    _LOGGER.error(f"PIN LOCKED! User must wait before retrying. Error: {error_msg}")
+                    raise PINLockedError(f"BlueLink PIN locked: {error_msg}")
                 
                 # Auth errors
                 if error_code in [401, 403, 1003, 1005]:

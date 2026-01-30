@@ -11,7 +11,7 @@ The API is nearly identical to Hyundai, just with different endpoints and brand 
 import logging
 import asyncio
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import ssl
 import uuid
 import certifi
@@ -20,7 +20,7 @@ import time
 from functools import partial
 from aiohttp import ClientSession, ClientResponse
 
-from .errors import AuthError, ActionAlreadyInProgressError
+from .errors import AuthError, ActionAlreadyInProgressError, PINLockedError, TokenExpiredError
 from .const import (
     GENESIS_API_URL_HOST,
     GENESIS_LOGIN_API_BASE,
@@ -115,8 +115,12 @@ class UsGenesis:
     _ssl_context = None
     access_token: str | None = None
     refresh_token: str | None = None
+    token_expires_at: datetime | None = None  # Track when the token expires
     vehicles: list[dict] | None = None
     last_action = None
+    
+    # Token refresh buffer - refresh this many seconds before expiration
+    TOKEN_REFRESH_BUFFER_SECONDS = 300  # 5 minutes before expiration
 
     def __init__(
             self,
@@ -143,6 +147,7 @@ class UsGenesis:
         self.password = password
         self.pin = pin
         self.device_id = device_id or str(uuid.uuid4()).upper()
+        self.token_expires_at = None
         if client_session is None:
             self.api_session = ClientSession(raise_for_status=False)
         else:
@@ -213,6 +218,65 @@ class UsGenesis:
         headers["vin"] = vehicle.get("vin", vehicle.get("VIN", ""))
         return headers
 
+    def _is_token_valid(self) -> bool:
+        """Check if the current access token is still valid.
+        
+        Returns True if:
+        - We have an access token
+        - Either we don't track expiration, or the token hasn't expired yet
+        
+        Uses a buffer (TOKEN_REFRESH_BUFFER_SECONDS) to refresh before actual expiration.
+        """
+        if self.access_token is None:
+            _LOGGER.debug("Token invalid: no access token")
+            return False
+        
+        if self.token_expires_at is None:
+            # No expiration tracking, assume valid
+            _LOGGER.debug("Token assumed valid: no expiration tracking")
+            return True
+        
+        # Check if token expires within the buffer period
+        now = datetime.now(timezone.utc)
+        expires_with_buffer = self.token_expires_at - timedelta(seconds=self.TOKEN_REFRESH_BUFFER_SECONDS)
+        
+        if now >= expires_with_buffer:
+            time_until_expiry = (self.token_expires_at - now).total_seconds()
+            _LOGGER.info("Token expiring soon or expired: expires in %.0f seconds", time_until_expiry)
+            return False
+        
+        time_until_expiry = (self.token_expires_at - now).total_seconds()
+        _LOGGER.debug("Token valid: expires in %.0f seconds", time_until_expiry)
+        return True
+
+    async def _ensure_token_valid(self):
+        """Ensure we have a valid token, refreshing if necessary.
+        
+        This method should be called before any API request that requires authentication.
+        It proactively refreshes the token before it expires to prevent auth errors
+        during commands (which could cause PIN lockout).
+        """
+        if self._is_token_valid():
+            return
+        
+        _LOGGER.info("Token invalid or expiring soon, refreshing...")
+        
+        # Clear the old token to force a fresh login
+        old_expires_at = self.token_expires_at
+        self.access_token = None
+        self.token_expires_at = None
+        
+        try:
+            await self.login()
+            _LOGGER.info("Token refreshed successfully. Old expiry: %s, New expiry: %s", 
+                        old_expires_at, self.token_expires_at)
+        except PINLockedError:
+            # Re-raise PIN locked errors - user needs to wait
+            raise
+        except AuthError as e:
+            _LOGGER.error("Failed to refresh token: %s", e)
+            raise
+
     @request_with_logging_bluelink
     async def _post_request_with_logging_and_errors_raised(
             self,
@@ -281,6 +345,21 @@ class UsGenesis:
         if response_json.get("access_token"):
             self.access_token = response_json["access_token"]
             self.refresh_token = response_json.get("refresh_token")
+            
+            # Parse token expiration time
+            expires_in = response_json.get("expires_in")
+            if expires_in:
+                try:
+                    expires_in_seconds = int(expires_in)
+                    self.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in_seconds)
+                    _LOGGER.info("Token expires in %d seconds (at %s)", expires_in_seconds, self.token_expires_at)
+                except (ValueError, TypeError):
+                    _LOGGER.warning("Could not parse expires_in: %s, token expiration tracking disabled", expires_in)
+                    self.token_expires_at = None
+            else:
+                _LOGGER.info("No expires_in in response, token expiration tracking disabled")
+                self.token_expires_at = None
+            
             _LOGGER.info("========== GENESIS LOGIN SUCCESS ==========")
             return
         
@@ -289,12 +368,16 @@ class UsGenesis:
         _LOGGER.error("Response: %s", response_json)
         
         error_msg = response_json.get("errorMessage", response_json.get("message", "Unknown error"))
+        
+        # Check for PIN locked error
+        if "PIN" in error_msg.upper() and "LOCKED" in error_msg.upper():
+            raise PINLockedError(f"Genesis PIN locked: {error_msg}")
+        
         raise AuthError(f"Genesis login failed: {error_msg}")
 
     async def get_vehicles(self):
         """Get list of vehicles for the account."""
-        if self.access_token is None:
-            await self.login()
+        await self._ensure_token_valid()
         
         url = GENESIS_API_URL_BASE + "enrollment/details/" + self.username
         headers = self._get_authenticated_headers()
@@ -340,8 +423,7 @@ class UsGenesis:
 
     async def get_cached_vehicle_status(self, vehicle_id: str):
         """Get cached vehicle status from Genesis API."""
-        if self.access_token is None:
-            await self.login()
+        await self._ensure_token_valid()
         
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
@@ -539,8 +621,7 @@ class UsGenesis:
 
     async def request_vehicle_data_sync(self, vehicle_id: str):
         """Request fresh vehicle data sync."""
-        if self.access_token is None:
-            await self.login()
+        await self._ensure_token_valid()
         
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
@@ -555,8 +636,7 @@ class UsGenesis:
     async def lock(self, vehicle_id: str):
         """Lock the vehicle."""
         _LOGGER.info("===== GENESIS LOCK CALLED =====")
-        if self.access_token is None:
-            await self.login()
+        await self._ensure_token_valid()
         
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
@@ -576,8 +656,7 @@ class UsGenesis:
     async def unlock(self, vehicle_id: str):
         """Unlock the vehicle."""
         _LOGGER.info("===== GENESIS UNLOCK CALLED =====")
-        if self.access_token is None:
-            await self.login()
+        await self._ensure_token_valid()
         
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
@@ -602,6 +681,7 @@ class UsGenesis:
             climate: bool,
             heating: bool,
             steering_wheel_heat: int = 0,
+            duration: int | None = None,
             driver_seat: SeatSettings | None = None,
             passenger_seat: SeatSettings | None = None,
             left_rear_seat: SeatSettings | None = None,
@@ -610,12 +690,11 @@ class UsGenesis:
         """Start climate control."""
         _LOGGER.info("===== GENESIS START_CLIMATE CALLED =====")
         _LOGGER.info(
-            "start_climate params: temp=%s, defrost=%s, climate=%s, heating=%s, steering_wheel=%s",
-            set_temp, defrost, climate, heating, steering_wheel_heat
+            "start_climate params: temp=%s, defrost=%s, climate=%s, heating=%s, steering_wheel=%s, duration=%s",
+            set_temp, defrost, climate, heating, steering_wheel_heat, duration
         )
         
-        if self.access_token is None:
-            await self.login()
+        await self._ensure_token_valid()
         
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
@@ -636,7 +715,8 @@ class UsGenesis:
                 "heating1": int(heating),
             }
             if generation >= 3:
-                data["igniOnDuration"] = 10
+                if duration is not None:
+                    data["igniOnDuration"] = duration
                 data["seatHeaterVentInfo"] = {
                     "drvSeatHeatState": _seat_settings_genesis(driver_seat, vehicle_id),
                     "astSeatHeatState": _seat_settings_genesis(passenger_seat, vehicle_id),
@@ -650,7 +730,6 @@ class UsGenesis:
                 "airTemp": {"unit": 1, "value": set_temp},
                 "defrost": defrost,
                 "heating1": int(heating),
-                "igniOnDuration": 10,
                 "seatHeaterVentInfo": {
                     "drvSeatHeatState": _seat_settings_genesis(driver_seat, vehicle_id),
                     "astSeatHeatState": _seat_settings_genesis(passenger_seat, vehicle_id),
@@ -660,6 +739,9 @@ class UsGenesis:
                 "username": self.username,
                 "vin": vehicle.get("vin"),
             }
+            # Only include duration if user specified it
+            if duration is not None:
+                data["igniOnDuration"] = duration
         
         _LOGGER.debug("Genesis start_climate data: %s", data)
         
@@ -672,8 +754,7 @@ class UsGenesis:
 
     async def stop_climate(self, vehicle_id: str):
         """Stop climate control."""
-        if self.access_token is None:
-            await self.login()
+        await self._ensure_token_valid()
         
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
@@ -694,8 +775,7 @@ class UsGenesis:
 
     async def start_charge(self, vehicle_id: str):
         """Start charging (EV only)."""
-        if self.access_token is None:
-            await self.login()
+        await self._ensure_token_valid()
         
         vehicle = await self.find_vehicle(vehicle_id)
         if vehicle.get("evStatus") != "E":
@@ -714,8 +794,7 @@ class UsGenesis:
 
     async def stop_charge(self, vehicle_id: str):
         """Stop charging (EV only)."""
-        if self.access_token is None:
-            await self.login()
+        await self._ensure_token_valid()
         
         vehicle = await self.find_vehicle(vehicle_id)
         if vehicle.get("evStatus") != "E":
@@ -739,8 +818,7 @@ class UsGenesis:
             dc_limit: int,
     ):
         """Set charge limits (EV only)."""
-        if self.access_token is None:
-            await self.login()
+        await self._ensure_token_valid()
         
         vehicle = await self.find_vehicle(vehicle_id)
         if vehicle.get("evStatus") != "E":

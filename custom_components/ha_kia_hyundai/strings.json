@@ -71,6 +71,10 @@
           "name": "Heating Accessories",
           "description": "Turn on heating accessories."
         },
+        "duration": {
+          "name": "Duration",
+          "description": "How long to run climate in minutes. Vehicle limits vary by model (typically 5-30 minutes)."
+        },
         "driver_seat": {
           "name": "Driver's Seat",
           "description": "Driver's seat controls."
