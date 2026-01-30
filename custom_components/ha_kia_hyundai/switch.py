@@ -22,7 +22,8 @@ async def async_setup_entry(
 
     switches: list[SwitchEntity] = []
     for coordinator in coordinators.values():
-        switches.append(ChargingSwitch(coordinator=coordinator))
+        if coordinator.is_ev:
+            switches.append(ChargingSwitch(coordinator=coordinator))
         
         if coordinator.can_remote_climate:
             _LOGGER.debug("Adding climate related switch entities for %s", coordinator.vehicle_name)

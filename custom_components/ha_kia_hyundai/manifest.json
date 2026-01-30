@@ -8,5 +8,5 @@
   "issue_tracker": "https://github.com/MarcusTaz/ha_kia_hyundai_USA/issues",
   "loggers": ["ha_kia_hyundai", "kia_hyundai_api"],
   "requirements": ["pytz>=2021.3"],
-  "version": "3.1.0"
+  "version": "3.1.1"
 }

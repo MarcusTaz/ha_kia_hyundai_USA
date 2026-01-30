@@ -180,6 +180,15 @@ class VehicleCoordinator(DataUpdateCoordinator):
         )
 
     @property
+    def is_ev(self) -> bool:
+        """Return True if this is an electric vehicle."""
+        ev_status = safely_get_json_value(
+            self.data,
+            "lastVehicleInfo.vehicleStatusRpt.vehicleStatus.evStatus"
+        )
+        return ev_status is not None
+
+    @property
     def ev_battery_level(self) -> int | None:
         """Return EV battery percentage."""
         return safely_get_json_value(

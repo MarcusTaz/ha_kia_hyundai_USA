@@ -47,6 +47,7 @@ SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         preserve_state=True,
+        exists_fn=lambda c: c.is_ev,
     ),
     KiaSensorEntityDescription(
         key="odometer_value",
@@ -92,6 +93,7 @@ SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
         icon="mdi:ev-station",
         native_unit_of_measurement=UnitOfTime.MINUTES,
         state_class=SensorStateClass.MEASUREMENT,
+        exists_fn=lambda c: c.is_ev,
     ),
     KiaSensorEntityDescription(
         key="ev_remaining_range_value",
@@ -100,6 +102,7 @@ SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
         icon="mdi:road-variant",
         native_unit_of_measurement=UnitOfLength.MILES,
         state_class=SensorStateClass.MEASUREMENT,
+        exists_fn=lambda c: c.is_ev,
     ),
     KiaSensorEntityDescription(
         key="fuel_level",
@@ -170,6 +173,9 @@ async def async_setup_entry(
         sensors.append(APIActionInProgress(coordinator=coordinator))
         
         for sensor_description in SENSOR_DESCRIPTIONS:
+            if not sensor_description.exists_fn(coordinator):
+                _LOGGER.debug(f"Skipping sensor {sensor_description.key} - exists_fn returned False")
+                continue
             _LOGGER.debug(f"Adding sensor {sensor_description.key}? preserve_state:{sensor_description.preserve_state is True} or value:{getattr(coordinator, sensor_description.key)} is not None:{getattr(coordinator, sensor_description.key) is not None}")
             if sensor_description.preserve_state or getattr(coordinator, sensor_description.key) is not None:
                 _LOGGER.debug(f"added {sensor_description.key}")
