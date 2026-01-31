@@ -173,11 +173,10 @@ For Kia electric vehicles (EV6, EV9, etc.), the remote climate API has the follo
 
 **What must be set in the official Kia app:**
 - Climate duration (how long climate runs)
-- Target temperature
 
-This is a Kia API limitation. The vehicle uses your "Custom Climate" profile settings stored in the official Kia Connect app for duration and temperature. To change these values, update your Custom Climate settings in the Kia app.
+This is a Kia API limitation. The vehicle uses your "Custom Climate" profile settings stored in the official Kia Connect app for duration. To change these values, update your Custom Climate settings in the Kia app launch climate and then stop.
 
-**Workaround:** Set your preferred duration and temperature in the Kia Connect app's Custom Climate section. Home Assistant can then trigger climate start, and the vehicle will use your stored preferences.
+**Workaround:** Set your preferred duration in the Kia Connect app's Custom Climate section. Home Assistant can then trigger climate start, and the vehicle will use your stored preferences.
 
 ## Update Frequency
 
