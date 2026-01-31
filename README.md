@@ -211,7 +211,7 @@ The original [dahlb/ha_kia_hyundai](https://github.com/dahlb/ha_kia_hyundai) rep
 
 - **Original Author**: [Bren Dahl (@dahlb)](https://github.com/dahlb)
 - **Community Maintainer**: [MarcusTaz](https://github.com/MarcusTaz)
-- **Contributors**: mmase, and the Hyundai-Kia-Connect community
+- **Contributors**: @mmase, and the Hyundai-Kia-Connect community
 
 ## Contributing
 
