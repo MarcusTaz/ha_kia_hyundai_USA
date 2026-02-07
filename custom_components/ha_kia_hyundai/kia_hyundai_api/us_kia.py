@@ -697,12 +697,16 @@ class UsKia:
         if await self.check_last_action_finished(vehicle_id=vehicle_id) is False:
             raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
-        # Try GET request pattern like stop_charge uses
-        url = API_URL_BASE + "evc/rfb"
-        _LOGGER.debug("Battery preconditioning start request: url=%s (GET)", url)
-        response = await self._get_request_with_logging_and_errors_raised(
+        # Try POST with battery conditioning payload
+        url = API_URL_BASE + "evc/charge"
+        body = {
+            "batteryPreConditioning": 1
+        }
+        _LOGGER.debug("Battery preconditioning start request: url=%s, body=%s", url, body)
+        response = await self._post_request_with_logging_and_errors_raised(
             vehicle_key=vehicle_key,
             url=url,
+            json_body=body,
         )
         self.last_action = {
             "name": "start_battery_preconditioning",
@@ -716,12 +720,16 @@ class UsKia:
         if await self.check_last_action_finished(vehicle_id=vehicle_id) is False:
             raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
-        # Try cancel endpoint like stop_charge
-        url = API_URL_BASE + "evc/rfb/off"
-        _LOGGER.debug("Battery preconditioning stop request: url=%s (GET)", url)
-        response = await self._get_request_with_logging_and_errors_raised(
+        # Try POST with battery conditioning off
+        url = API_URL_BASE + "evc/charge"
+        body = {
+            "batteryPreConditioning": 0
+        }
+        _LOGGER.debug("Battery preconditioning stop request: url=%s, body=%s", url, body)
+        response = await self._post_request_with_logging_and_errors_raised(
             vehicle_key=vehicle_key,
             url=url,
+            json_body=body,
         )
         self.last_action = {
             "name": "stop_battery_preconditioning",
