@@ -697,13 +697,14 @@ class UsKia:
         if await self.check_last_action_finished(vehicle_id=vehicle_id) is False:
             raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
-        # Try dedicated battery care endpoint
-        url = API_URL_BASE + "evc/rfb/start"
-        _LOGGER.debug("Battery preconditioning start request: url=%s (POST)", url)
+        # Try battery conditioning endpoint with POST and body
+        url = API_URL_BASE + "evc/battery"
+        body = {"condition": "on"}
+        _LOGGER.debug("Battery preconditioning start request: url=%s, body=%s", url, body)
         response = await self._post_request_with_logging_and_errors_raised(
             vehicle_key=vehicle_key,
             url=url,
-            json_body={},
+            json_body=body,
         )
         self.last_action = {
             "name": "start_battery_preconditioning",
@@ -717,13 +718,14 @@ class UsKia:
         if await self.check_last_action_finished(vehicle_id=vehicle_id) is False:
             raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
-        # Try dedicated battery care endpoint
-        url = API_URL_BASE + "evc/rfb/stop"
-        _LOGGER.debug("Battery preconditioning stop request: url=%s (POST)", url)
+        # Try battery conditioning endpoint with POST and body
+        url = API_URL_BASE + "evc/battery"
+        body = {"condition": "off"}
+        _LOGGER.debug("Battery preconditioning stop request: url=%s, body=%s", url, body)
         response = await self._post_request_with_logging_and_errors_raised(
             vehicle_key=vehicle_key,
             url=url,
-            json_body={},
+            json_body=body,
         )
         self.last_action = {
             "name": "stop_battery_preconditioning",
