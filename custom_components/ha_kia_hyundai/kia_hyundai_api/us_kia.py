@@ -689,3 +689,48 @@ class UsKia:
             "name": "set_charge_limits",
             "xid": response.headers["Xid"]
         }
+
+    @request_with_active_session
+    async def start_battery_preconditioning(self, vehicle_id: str):
+        """Start battery preconditioning (warms/cools battery for optimal charging)."""
+        _LOGGER.info("===== US_KIA START_BATTERY_PRECONDITIONING CALLED =====")
+        if await self.check_last_action_finished(vehicle_id=vehicle_id) is False:
+            raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
+        # Try evc/precondition endpoint - may need adjustment based on API response
+        url = API_URL_BASE + "evc/precondition"
+        vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
+        body = {
+            "action": "start"
+        }
+        _LOGGER.debug("Battery preconditioning start request: url=%s, body=%s", url, body)
+        response = await self._post_request_with_logging_and_errors_raised(
+            vehicle_key=vehicle_key,
+            url=url,
+            json_body=body,
+        )
+        self.last_action = {
+            "name": "start_battery_preconditioning",
+            "xid": response.headers.get("Xid", "unknown")
+        }
+
+    @request_with_active_session
+    async def stop_battery_preconditioning(self, vehicle_id: str):
+        """Stop battery preconditioning."""
+        _LOGGER.info("===== US_KIA STOP_BATTERY_PRECONDITIONING CALLED =====")
+        if await self.check_last_action_finished(vehicle_id=vehicle_id) is False:
+            raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
+        url = API_URL_BASE + "evc/precondition"
+        vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
+        body = {
+            "action": "stop"
+        }
+        _LOGGER.debug("Battery preconditioning stop request: url=%s, body=%s", url, body)
+        response = await self._post_request_with_logging_and_errors_raised(
+            vehicle_key=vehicle_key,
+            url=url,
+            json_body=body,
+        )
+        self.last_action = {
+            "name": "stop_battery_preconditioning",
+            "xid": response.headers.get("Xid", "unknown")
+        }

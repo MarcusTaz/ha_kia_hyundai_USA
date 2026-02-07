@@ -24,7 +24,8 @@ async def async_setup_entry(
     for coordinator in coordinators.values():
         if coordinator.is_ev:
             switches.append(ChargingSwitch(coordinator=coordinator))
-        
+            switches.append(BatteryPreconditioningSwitch(coordinator=coordinator))
+
         if coordinator.can_remote_climate:
             _LOGGER.debug("Adding climate related switch entities for %s", coordinator.vehicle_name)
             switches.append(ClimateDesiredDefrostSwitch(coordinator=coordinator))
@@ -139,3 +140,48 @@ class ChargingSwitch(VehicleCoordinatorBaseEntity, SwitchEntity):
         await self.coordinator.api_connection.stop_charge(vehicle_id=self.coordinator.vehicle_id)
         self.coordinator.async_update_listeners()
         await self.coordinator.async_request_refresh()
+
+
+class BatteryPreconditioningSwitch(VehicleCoordinatorBaseEntity, SwitchEntity, RestoreEntity):
+    """Switch to control battery preconditioning (warms/cools battery for optimal charging)."""
+
+    def __init__(
+            self,
+            coordinator: VehicleCoordinator,
+    ):
+        super().__init__(coordinator, SwitchEntityDescription(
+            key="battery_preconditioning",
+            name="Battery Preconditioning",
+            icon="mdi:battery-heart",
+            device_class=SwitchDeviceClass.SWITCH,
+        ))
+        self._is_on = False
+
+    @property
+    def is_on(self) -> bool | None:
+        return self._is_on
+
+    async def async_turn_on(self, **kwargs: any) -> None:
+        _LOGGER.info("Turning on battery preconditioning for %s", self.coordinator.vehicle_name)
+        await self.coordinator.api_connection.start_battery_preconditioning(
+            vehicle_id=self.coordinator.vehicle_id
+        )
+        self._is_on = True
+        self.async_write_ha_state()
+        self.coordinator.async_update_listeners()
+
+    async def async_turn_off(self, **kwargs: any) -> None:
+        _LOGGER.info("Turning off battery preconditioning for %s", self.coordinator.vehicle_name)
+        await self.coordinator.api_connection.stop_battery_preconditioning(
+            vehicle_id=self.coordinator.vehicle_id
+        )
+        self._is_on = False
+        self.async_write_ha_state()
+        self.coordinator.async_update_listeners()
+
+    async def async_internal_added_to_hass(self) -> None:
+        """Restore previous state when added to hass."""
+        await super().async_internal_added_to_hass()
+        state = await self.async_get_last_state()
+        if state is not None and state.state not in (STATE_UNAVAILABLE, None):
+            self._is_on = state.state == STATE_ON
