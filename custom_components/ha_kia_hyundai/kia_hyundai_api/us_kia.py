@@ -696,17 +696,13 @@ class UsKia:
         _LOGGER.info("===== US_KIA START_BATTERY_PRECONDITIONING CALLED =====")
         if await self.check_last_action_finished(vehicle_id=vehicle_id) is False:
             raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
-        # Try evc/precondition endpoint - may need adjustment based on API response
-        url = API_URL_BASE + "evc/precondition"
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
-        body = {
-            "action": "start"
-        }
-        _LOGGER.debug("Battery preconditioning start request: url=%s, body=%s", url, body)
-        response = await self._post_request_with_logging_and_errors_raised(
+        # Try GET request pattern like stop_charge uses
+        url = API_URL_BASE + "evc/rfb"
+        _LOGGER.debug("Battery preconditioning start request: url=%s (GET)", url)
+        response = await self._get_request_with_logging_and_errors_raised(
             vehicle_key=vehicle_key,
             url=url,
-            json_body=body,
         )
         self.last_action = {
             "name": "start_battery_preconditioning",
@@ -719,16 +715,13 @@ class UsKia:
         _LOGGER.info("===== US_KIA STOP_BATTERY_PRECONDITIONING CALLED =====")
         if await self.check_last_action_finished(vehicle_id=vehicle_id) is False:
             raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
-        url = API_URL_BASE + "evc/precondition"
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
-        body = {
-            "action": "stop"
-        }
-        _LOGGER.debug("Battery preconditioning stop request: url=%s, body=%s", url, body)
-        response = await self._post_request_with_logging_and_errors_raised(
+        # Try cancel endpoint like stop_charge
+        url = API_URL_BASE + "evc/rfb/off"
+        _LOGGER.debug("Battery preconditioning stop request: url=%s (GET)", url)
+        response = await self._get_request_with_logging_and_errors_raised(
             vehicle_key=vehicle_key,
             url=url,
-            json_body=body,
         )
         self.last_action = {
             "name": "stop_battery_preconditioning",
