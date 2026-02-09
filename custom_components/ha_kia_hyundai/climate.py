@@ -21,7 +21,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import VehicleCoordinator, get_all_coordinators
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 from .const import (
-    DOMAIN,
     TEMPERATURE_MIN,
     TEMPERATURE_MAX,
 )
@@ -38,7 +37,7 @@ async def async_setup_entry(
     hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
     coordinators = get_all_coordinators(hass)
-    
+
     entities = []
     for coordinator in coordinators.values():
         if coordinator.can_remote_climate:
@@ -46,7 +45,7 @@ async def async_setup_entry(
             entities.append(Thermostat(coordinator))
         else:
             _LOGGER.debug("Skipping climate entity for %s, can not remote start?", coordinator.vehicle_name)
-    
+
     async_add_entities(entities)
 
 

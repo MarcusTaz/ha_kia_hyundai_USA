@@ -22,7 +22,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import VehicleCoordinator, get_all_coordinators
-from .const import DOMAIN, SEAT_STATUS
+from .const import SEAT_STATUS
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 _LOGGER = getLogger(__name__)
@@ -110,6 +110,7 @@ SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
         icon="mdi:fuel",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
+        exists_fn=lambda c: not c.is_ev,  # Only show for ICE/hybrid vehicles
     ),
     KiaSensorEntityDescription(
         key="fuel_remaining_range_value",
@@ -166,12 +167,12 @@ async def async_setup_entry(
     hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinators = get_all_coordinators(hass)
-    
+
     sensors: list[SensorEntity] = []
-    
+
     for coordinator in coordinators.values():
         sensors.append(APIActionInProgress(coordinator=coordinator))
-        
+
         for sensor_description in SENSOR_DESCRIPTIONS:
             if not sensor_description.exists_fn(coordinator):
                 _LOGGER.debug(f"Skipping sensor {sensor_description.key} - exists_fn returned False")

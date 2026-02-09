@@ -47,7 +47,6 @@ from .const import (
     CONFIG_FLOW_TEMP_VEHICLES,
     BRAND_KIA,
     BRAND_HYUNDAI,
-    BRAND_GENESIS,
     BRANDS,
 )
 
@@ -100,7 +99,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
 
     async def async_step_reauth(self, user_input: dict[str, Any] | None = None):
         """Handle re-authentication.
-        
+
         When reauth is triggered, we get the existing config entry data as user_input,
         but it doesn't contain otp_type (which is only used during initial setup).
         We need to show the user form to get fresh credentials.
@@ -119,7 +118,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
 
         # Get default brand from stored data (e.g., from reauth)
         default_brand = self.data.get(CONF_BRAND, BRAND_KIA)
-        
+
         data_schema = vol.Schema({
             vol.Required(CONF_BRAND, default=default_brand): vol.In(BRANDS),
         })
@@ -128,7 +127,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         if user_input is not None:
             brand = user_input[CONF_BRAND]
             self.data[CONF_BRAND] = brand
-            
+
             # Route to brand-specific credential step
             if brand == BRAND_KIA:
                 return await self.async_step_kia_credentials()
@@ -146,7 +145,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         _LOGGER.debug("Kia credentials step with input: %s", user_input)
 
         default_username = self.data.get(CONF_USERNAME, "")
-        
+
         data_schema = vol.Schema({
             vol.Required(CONF_USERNAME, default=default_username): str,
             vol.Required(CONF_PASSWORD): str,
@@ -169,28 +168,28 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             async def otp_callback(context: dict[str, Any]):
                 stage = context.get("stage")
                 _LOGGER.info("OTP callback called with stage: %s", stage)
-                
+
                 if stage == "choose_destination":
                     _LOGGER.info("OTP destination: %s (email available: %s, phone available: %s)",
                                 otp_type, context.get("hasEmail"), context.get("hasPhone"))
                     return {"notify_type": otp_type}
-                
+
                 if stage == "input_code":
                     _LOGGER.info("Waiting for OTP code input...")
-                    for i in range(120):
+                    for _i in range(120):
                         if CONF_OTP_CODE in self.data:
                             otp_code = self.data[CONF_OTP_CODE]
                             _LOGGER.info("OTP code received (length: %d)", len(otp_code))
                             return {"otp_code": otp_code}
                         await asyncio.sleep(1)
-                    
+
                     raise ConfigEntryAuthFailed("2 minute timeout waiting for OTP code")
-                
+
                 raise ConfigEntryAuthFailed(f"Unknown OTP stage: {stage}")
 
             try:
                 client_session = async_get_clientsession(self.hass)
-                
+
                 _LOGGER.info("Creating UsKia connection for %s", username)
                 self.api_connection = UsKia(
                     username=username,
@@ -211,7 +210,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 # Start login task (runs in background while waiting for OTP)
                 _LOGGER.info("Starting login task...")
                 self.otp_task = self.hass.loop.create_task(self.api_connection.login())
-                
+
                 return await self.async_step_otp_code()
 
             except AuthError as e:
@@ -231,11 +230,11 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         """Handle Hyundai/Genesis credentials input (PIN-based, no OTP)."""
         brand = self.data.get(CONF_BRAND, BRAND_HYUNDAI)
         brand_name = BRANDS.get(brand, "Hyundai")
-        
+
         _LOGGER.debug("%s credentials step with input: %s", brand_name, user_input)
 
         default_username = self.data.get(CONF_USERNAME, "")
-        
+
         data_schema = vol.Schema({
             vol.Required(CONF_USERNAME, default=default_username): str,
             vol.Required(CONF_PASSWORD): str,
@@ -260,7 +259,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
 
                 try:
                     client_session = async_get_clientsession(self.hass)
-                    
+
                     if brand == BRAND_HYUNDAI:
                         _LOGGER.info("Creating UsHyundai connection for %s", username)
                         self.api_connection = UsHyundai(
@@ -277,8 +276,8 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                             pin=pin,
                             client_session=client_session,
                         )
-                    
-                    _LOGGER.info("%s connection created with device_id: %s", 
+
+                    _LOGGER.info("%s connection created with device_id: %s",
                                 brand_name, self.api_connection.device_id)
 
                     # Store user input
@@ -292,10 +291,10 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                     # Login and get vehicles directly (no OTP needed for Hyundai/Genesis)
                     _LOGGER.info("Logging in to %s...", brand_name)
                     await self.api_connection.login()
-                    
+
                     _LOGGER.info("Getting vehicles...")
                     await self.api_connection.get_vehicles()
-                    
+
                     if not self.api_connection.vehicles:
                         _LOGGER.error("No vehicles found")
                         return self.async_abort(reason="no_vehicles")
@@ -303,7 +302,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                     # Store discovered vehicles
                     self.data[CONFIG_FLOW_TEMP_VEHICLES] = self.api_connection.vehicles
                     self.data[CONF_DEVICE_ID] = self.api_connection.device_id
-                    
+
                     if hasattr(self.api_connection, 'refresh_token') and self.api_connection.refresh_token:
                         self.data[CONF_REFRESH_TOKEN] = self.api_connection.refresh_token
 
@@ -333,8 +332,8 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
     async def async_step_otp_code(self, user_input: dict[str, Any] | None = None):
         """Handle OTP code input step."""
         _LOGGER.debug("OTP code step with input: %s", user_input)
-        
-        brand = self.data.get(CONF_BRAND, BRAND_KIA)
+
+        self.data.get(CONF_BRAND, BRAND_KIA)
 
         data_schema = vol.Schema({
             vol.Required(CONF_OTP_CODE): str,
@@ -376,7 +375,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 # Wait for login task to complete
                 await self.otp_task
                 _LOGGER.info("Login completed successfully!")
-                
+
                 return await self._finalize_login()
 
             except AuthError as e:
@@ -404,20 +403,20 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             raise ConfigEntryAuthFailed("API connection not established")
 
         brand = self.data.get(CONF_BRAND, BRAND_KIA)
-        
+
         # For Kia, we need to get vehicles after login
         # For Hyundai/Genesis, vehicles are already fetched in _bluelink_login_and_get_vehicles
         if brand == BRAND_KIA:
             _LOGGER.info("Getting vehicles...")
             await self.api_connection.get_vehicles()
-        
+
         if not self.api_connection.vehicles:
             _LOGGER.error("No vehicles found")
             return self.async_abort(reason="no_vehicles")
 
         # Store discovered vehicles for confirmation step
         self.data[CONFIG_FLOW_TEMP_VEHICLES] = self.api_connection.vehicles
-        
+
         # Store tokens
         self.data[CONF_DEVICE_ID] = self.api_connection.device_id
         if hasattr(self.api_connection, 'refresh_token') and self.api_connection.refresh_token:
@@ -425,9 +424,9 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
 
         _LOGGER.info("Found %d vehicles", len(self.api_connection.vehicles))
         for v in self.api_connection.vehicles:
-            _LOGGER.info("  - %s (%s): %s", 
-                        v.get("nickName", v.get("name")), 
-                        v.get("modelName", v.get("modelCode")), 
+            _LOGGER.info("  - %s (%s): %s",
+                        v.get("nickName", v.get("name")),
+                        v.get("modelName", v.get("modelCode")),
                         v.get("vehicleIdentifier", v.get("id")))
 
         return await self.async_step_confirm_vehicles()
@@ -439,7 +438,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
         vehicles = self.data.get(CONFIG_FLOW_TEMP_VEHICLES, [])
         brand = self.data.get(CONF_BRAND, BRAND_KIA)
         brand_name = BRANDS.get(brand, "Kia")
-        
+
         # Build list of vehicle names for description
         vehicle_list = []
         for v in vehicles:
@@ -447,13 +446,13 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             model = v.get("modelName", v.get("modelCode", v.get("model", "")))
             year = v.get("modelYear", v.get("year", ""))
             vehicle_list.append(f"• {nick} ({year} {model})")
-        
+
         vehicle_description = "\n".join(vehicle_list)
 
         if user_input is not None:
             # User confirmed - proceed to create entry
             _LOGGER.info("User confirmed vehicles, creating config entry")
-            
+
             # Build vehicle list for storage (handle different field names by brand)
             vehicle_data = []
             for v in vehicles:
@@ -465,7 +464,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                     "vin": v.get("vin", v.get("VIN", "")),
                     "key": v.get("vehicleKey", v.get("regid", "")),
                 })
-            
+
             # Build entry data based on brand
             entry_data = {
                 CONF_BRAND: brand,
@@ -474,13 +473,13 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
                 CONF_VEHICLES: vehicle_data,
                 CONF_DEVICE_ID: self.data.get(CONF_DEVICE_ID),
             }
-            
+
             # Add brand-specific fields
             if brand == BRAND_KIA:
                 entry_data[CONF_REFRESH_TOKEN] = self.data.get(CONF_REFRESH_TOKEN)
             else:  # Hyundai or Genesis
                 entry_data[CONF_PIN] = self.data.get(CONF_PIN)
-            
+
             # Handle reauth - update existing entry
             if self.source == SOURCE_REAUTH:
                 reauth_entry = self._get_reauth_entry()
@@ -506,7 +505,7 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
             self._abort_if_unique_id_configured()
 
             title = f"{brand_name}: {self.data[CONF_USERNAME]}"
-            _LOGGER.info("Creating config entry for %s with %d vehicles", 
+            _LOGGER.info("Creating config entry for %s with %d vehicles",
                         title, len(vehicle_data))
 
             return self.async_create_entry(
@@ -527,15 +526,15 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
 
     async def async_step_import(self, import_data: dict[str, Any]):
         """Handle import from legacy config entries.
-        
+
         This migrates old per-vehicle entries to the new per-account format.
         """
         _LOGGER.info("Import step called - legacy migration")
-        
-        # If this is a legacy import with vehicle_id, abort - 
+
+        # If this is a legacy import with vehicle_id, abort -
         # migration should be handled in __init__.py
         if CONF_VEHICLE_ID in import_data:
             _LOGGER.info("Legacy vehicle entry import - will be migrated")
             return self.async_abort(reason="legacy_migration")
-        
+
         return self.async_abort(reason="unknown")

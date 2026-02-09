@@ -6,7 +6,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import get_all_coordinators
-from .const import DOMAIN
 from .vehicle_coordinator import VehicleCoordinator
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
@@ -18,12 +17,12 @@ async def async_setup_entry(
     hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
     coordinators = get_all_coordinators(hass)
-    
+
     entities = []
     for coordinator in coordinators.values():
         if coordinator.can_remote_lock:
             entities.append(Lock(coordinator))
-    
+
     async_add_entities(entities)
 
 

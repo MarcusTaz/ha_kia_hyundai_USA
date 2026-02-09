@@ -11,9 +11,6 @@ import logging
 import asyncio
 
 from datetime import datetime
-import random
-import string
-import secrets
 import ssl
 import uuid
 from collections.abc import Callable
@@ -37,14 +34,14 @@ _LOGGER = logging.getLogger(__name__)
 def _seat_settings(level: SeatSettings | None) -> dict:
     """Derive the seat settings from a seat setting enum."""
     _LOGGER.debug("_seat_settings called with level=%s (type=%s)", level, type(level))
-    
+
     if level is None:
         return {"heatVentType": 0, "heatVentLevel": 1, "heatVentStep": 0}
-    
+
     # Use value comparison to avoid enum identity issues across module imports
     level_value = level.value if hasattr(level, 'value') else level
     _LOGGER.debug("_seat_settings level_value=%s", level_value)
-    
+
     # SeatSettings enum values: NONE=0, CoolLow=1, CoolMedium=2, CoolHigh=3, HeatLow=4, HeatMedium=5, HeatHigh=6
     if level_value == 6:  # HeatHigh
         return {"heatVentType": 1, "heatVentLevel": 4, "heatVentStep": 1}
@@ -64,7 +61,7 @@ def _seat_settings(level: SeatSettings | None) -> dict:
 
 class UsKia:
     """Kia USA API client with fixed OTP support."""
-    
+
     _ssl_context = None
     session_id: str | None = None
     otp_key: str | None = None
@@ -124,14 +121,14 @@ class UsKia:
 
     def _api_headers(self, vehicle_key: str | None = None) -> dict:
         """Generate API headers matching the EU library's iOS headers.
-        
+
         These headers are copied exactly from hyundai-kia-connect-api KiaUvoApiUSA.py
         which has working OTP for the USA region.
         """
         offset = int(time.localtime().tm_gmtoff / 60 / 60)
         # Generate clientuuid as hash of device_id (same as EU library)
         client_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, self.device_id))
-        
+
         headers = {
             "content-type": "application/json;charset=utf-8",
             "accept": "application/json",
@@ -163,7 +160,7 @@ class UsKia:
         if vehicle_key is not None:
             headers["vinkey"] = vehicle_key
         return headers
-    
+
     def _otp_headers(self) -> dict:
         """Generate headers specifically for OTP requests."""
         headers = self._api_headers()
@@ -226,10 +223,10 @@ class UsKia:
             raise ValueError("OTP key required")
         if self.otp_xid is None:
             raise ValueError("OTP xid required")
-        
+
         url = API_URL_BASE + "cmm/sendOTP"
         self.notify_type = notify_type
-        
+
         _LOGGER.debug(f"Sending OTP to {notify_type}")
         response: ClientResponse = (
             await self._post_request_with_logging_and_errors_raised(
@@ -249,10 +246,10 @@ class UsKia:
             raise ValueError("OTP key required")
         if self.otp_xid is None:
             raise ValueError("OTP xid required")
-            
+
         url = API_URL_BASE + "cmm/verifyOTP"
         data = {"otp": otp_code}
-        
+
         response: ClientResponse = (
             await self._post_request_with_logging_and_errors_raised(
                 vehicle_key=None,
@@ -262,24 +259,24 @@ class UsKia:
                 use_otp_headers=True,
             )
         )
-        
+
         response_text = await response.text()
         _LOGGER.debug(f"Verify OTP Response {response_text}")
         response_json = await response.json()
-        
+
         if response_json["status"]["statusCode"] != 0:
             raise AuthError(
                 f"OTP verification failed: {response_json['status']['errorMessage']}"
             )
-        
+
         session_id = response.headers.get("sid")
         refresh_token = response.headers.get("rmtoken")
-        
+
         if not session_id or not refresh_token:
             raise AuthError(
                 f"No session_id or rmtoken in OTP verification response. Headers: {response.headers}"
             )
-        
+
         return session_id, refresh_token
 
     async def _complete_login_with_otp(self, sid: str, rmtoken: str) -> str:
@@ -293,34 +290,34 @@ class UsKia:
             "deviceType": 2,
             "userCredential": {"userId": self.username, "password": self.password},
         }
-        
+
         # Create headers with sid and rmtoken from OTP verification
         headers = self._api_headers()
         headers["sid"] = sid
         headers["rmtoken"] = rmtoken
-        
+
         response = await self.api_session.post(
             url=url,
             json=data,
             headers=headers,
             ssl=await self.get_ssl_context()
         )
-        
+
         response_text = await response.text()
         _LOGGER.debug(f"Complete Login Response {response_text}")
-        
+
         final_sid = response.headers.get("sid")
         if not final_sid:
             raise AuthError(
                 f"No final sid returned in complete login. Response: {response_text}"
             )
-        
+
         return final_sid
 
     async def login(self):
         """ Login into cloud endpoints """
         url = API_URL_BASE + "prof/authUser"
-        
+
         # FIXED: Added tncFlag to login payload
         data = {
             "deviceKey": self.device_id,
@@ -328,7 +325,7 @@ class UsKia:
             "userCredential": {"userId": self.username, "password": self.password},
             "tncFlag": 1,  # Added - terms and conditions flag
         }
-        
+
         response: ClientResponse = (
             await self._post_request_with_logging_and_errors_raised(
                 vehicle_key=None,
@@ -337,29 +334,29 @@ class UsKia:
                 authed=False,
             )
         )
-        
+
         response_text = await response.text()
         _LOGGER.debug(f"Complete Login Response {response_text}")
-        
+
         self.session_id = response.headers.get("sid")
         _LOGGER.debug(f"Session ID {self.session_id}")
-        
+
         if self.session_id:
             _LOGGER.debug(f"got session id {self.session_id}")
             return
-        
+
         response_json = await response.json()
-        
+
         if "payload" in response_json and "otpKey" in response_json["payload"]:
             payload = response_json["payload"]
             if payload.get("rmTokenExpired"):
                 _LOGGER.info("Stored rmtoken has expired, need new OTP")
                 self.refresh_token = None
-            
+
             try:
                 self.otp_key = payload["otpKey"]
                 self.otp_xid = response.headers.get("xid", "")  # Store xid for OTP flow
-                
+
                 _LOGGER.info("OTP required for login")
                 ctx_choice = {
                     "stage": "choose_destination",
@@ -371,10 +368,10 @@ class UsKia:
                 _LOGGER.debug(f"OTP callback stage choice args: {ctx_choice}")
                 callback_response = await self.otp_callback(ctx_choice)
                 _LOGGER.debug(f"OTP callback response {callback_response}")
-                
+
                 notify_type = str(callback_response.get("notify_type", "EMAIL")).upper()
                 await self._send_otp(notify_type)
-                
+
                 ctx_code = {
                     "stage": "input_code",
                     "notify_type": notify_type,
@@ -384,26 +381,26 @@ class UsKia:
                 _LOGGER.debug(f"OTP callback stage input args: {ctx_code}")
                 otp_callback_response = await self.otp_callback(ctx_code)
                 otp_code = str(otp_callback_response.get("otp_code", "")).strip()
-                
+
                 if not otp_code:
                     raise AuthError("OTP code required")
-                
+
                 # FIXED: Use the proper OTP verification flow
                 sid, rmtoken = await self._verify_otp(otp_code)
-                
+
                 # FIXED: Complete login with sid and rmtoken to get final session
                 final_sid = await self._complete_login_with_otp(sid, rmtoken)
-                
+
                 self.session_id = final_sid
                 self.refresh_token = rmtoken
                 _LOGGER.info("OTP verification successful, login complete")
                 return
-                
+
             finally:
                 self.otp_key = None
                 self.otp_xid = None
                 self.notify_type = None
-        
+
         raise AuthError(
             f"No session id returned in login. Response: {response_text} headers {response.headers}"
         )
@@ -591,7 +588,7 @@ class UsKia:
             right_rear_seat is not None and right_rear_seat != SeatSettings.NONE,
         ])
         _LOGGER.debug("has_seat_settings=%s", has_seat_settings)
-        
+
         if has_seat_settings:
             body["remoteClimate"]["heatVentSeat"] = {
                 "driverSeat": _seat_settings(driver_seat),

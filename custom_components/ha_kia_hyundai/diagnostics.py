@@ -7,7 +7,7 @@ from homeassistant.const import CONF_UNIQUE_ID, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
-from . import VehicleCoordinator, get_all_coordinators
+from . import get_all_coordinators
 from .const import DOMAIN
 
 TO_REDACT = {CONF_USERNAME, CONF_PASSWORD, CONF_UNIQUE_ID, "vehicle_identifier"}
@@ -42,7 +42,7 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, dict[str, any]]:
     """Return diagnostics for a config entry."""
     coordinators = get_all_coordinators(hass)
-    
+
     data = {
         "entry": async_redact_data(config_entry.as_dict(), TO_REDACT),
         "vehicles": {},
@@ -55,7 +55,7 @@ async def async_get_config_entry_diagnostics(
         vehicle_data = {
             "vehicle_raw_response": async_redact_data(coordinator.data, TO_REDACT_RAW),
         }
-        
+
         hass_device = device_registry.async_get_device(
             identifiers={(DOMAIN, str(coordinator.vehicle_id))}
         )
@@ -90,7 +90,7 @@ async def async_get_config_entry_diagnostics(
                     ),
                     "state": state_dict,
                 }
-        
+
         data["vehicles"][vehicle_id] = vehicle_data
 
     return data

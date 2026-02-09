@@ -8,7 +8,7 @@ import sys
 
 path_root = Path(__file__).parents[2]
 sys.path.append(str(path_root))
-from src.kia_hyundai_api import UsKia
+from src.kia_hyundai_api import UsKia  # noqa: E402
 
 logger = logging.getLogger("src.kia_hyundai_api")
 logger.setLevel(logging.DEBUG)

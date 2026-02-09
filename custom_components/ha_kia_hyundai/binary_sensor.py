@@ -1,6 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from logging import getLogger
 from typing import Final
+from collections.abc import Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -9,7 +10,6 @@ from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySen
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import VehicleCoordinator, get_all_coordinators
-from .const import DOMAIN
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 _LOGGER = getLogger(__name__)
@@ -21,6 +21,7 @@ class KiaBinarySensorEntityDescription(BinarySensorEntityDescription):
     """A class that describes custom binary sensor entities."""
     on_icon: str | None = None
     off_icon: str | None = None
+    exists_fn: Callable[["VehicleCoordinator"], bool] = field(default=lambda c: True)
 
 BINARY_SENSOR_DESCRIPTIONS: Final[tuple[KiaBinarySensorEntityDescription, ...]] = (
     KiaBinarySensorEntityDescription(
@@ -115,6 +116,7 @@ BINARY_SENSOR_DESCRIPTIONS: Final[tuple[KiaBinarySensorEntityDescription, ...]] 
         on_icon="mdi:gas-station-off",
         off_icon="mdi:gas-station",
         device_class=BinarySensorDeviceClass.PROBLEM,
+        exists_fn=lambda c: not c.is_ev,  # Only show for ICE/hybrid vehicles
     ),
     KiaBinarySensorEntityDescription(
         key="ev_battery_charging",
@@ -140,6 +142,9 @@ async def async_setup_entry(
     binary_sensors = []
     for coordinator in coordinators.values():
         for description in BINARY_SENSOR_DESCRIPTIONS:
+            if not description.exists_fn(coordinator):
+                _LOGGER.debug("Skipping binary sensor %s - exists_fn returned False", description.key)
+                continue
             if getattr(coordinator, description.key) is not None:
                 binary_sensors.append(
                     InstrumentSensor(

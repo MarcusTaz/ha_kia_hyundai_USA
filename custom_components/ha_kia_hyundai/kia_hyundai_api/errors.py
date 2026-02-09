@@ -19,11 +19,11 @@ class ActionAlreadyInProgressError(BaseError):
 
 class PINLockedError(AuthError):
     """Raised when PIN has been locked due to too many failed attempts.
-    
+
     This typically happens when:
     1. Token expired and multiple re-auth attempts failed
     2. Wrong PIN was entered multiple times
-    
+
     The user must wait for the lockout period (typically 60 minutes) before retrying.
     """
     pass

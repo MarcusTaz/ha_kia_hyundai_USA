@@ -7,7 +7,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import get_all_coordinators
-from .const import DOMAIN
 from .vehicle_coordinator import VehicleCoordinator
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
@@ -23,7 +22,7 @@ async def async_setup_entry(
     entities = []
     for coordinator in coordinators.values():
         entities.append(LocationTracker(coordinator))
-    
+
     async_add_entities(entities)
 
 

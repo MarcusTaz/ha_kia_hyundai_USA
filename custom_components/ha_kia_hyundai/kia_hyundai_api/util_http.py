@@ -41,7 +41,7 @@ def request_with_logging(func):
         _LOGGER.debug(
             f"response headers:{clean_dictionary_for_logging(response.headers)}"
         )
-        
+
         # Check content type before trying to parse JSON
         content_type = response.headers.get("Content-Type", "")
         if "application/json" not in content_type:
@@ -53,7 +53,7 @@ def request_with_logging(func):
             )
             # Treat this as an auth error to trigger session refresh
             raise AuthError(f"API returned non-JSON response (Content-Type: {content_type})")
-        
+
         try:
             response_json = await response.json()
             _LOGGER.debug(
@@ -113,7 +113,7 @@ def request_with_logging_bluelink(func):
         _LOGGER.debug(
             f"response headers:{clean_dictionary_for_logging(response.headers)}"
         )
-        
+
         # Check content type before trying to parse JSON
         content_type = response.headers.get("Content-Type", "")
         if "application/json" not in content_type:
@@ -123,35 +123,35 @@ def request_with_logging_bluelink(func):
                 f"First 500 chars: {response_text[:500]}"
             )
             raise AuthError(f"API returned non-JSON response (Content-Type: {content_type})")
-        
+
         try:
             response_json = await response.json()
             _LOGGER.debug(
                 f"response json:{clean_dictionary_for_logging(response_json)}"
             )
-            
+
             # BlueLink API error handling - different format than Kia
             # Check for error responses
             if "errorCode" in response_json and response_json.get("errorCode") != 0:
                 error_msg = response_json.get("errorMessage", response_json.get("errorSubMessage", "Unknown error"))
                 error_code = response_json.get("errorCode")
                 _LOGGER.debug(f"BlueLink API error: {error_code} - {error_msg}")
-                
+
                 # Check for PIN locked error - this is critical to detect
                 error_msg_upper = error_msg.upper() if error_msg else ""
                 if "PIN" in error_msg_upper and "LOCKED" in error_msg_upper:
                     _LOGGER.error(f"PIN LOCKED! User must wait before retrying. Error: {error_msg}")
                     raise PINLockedError(f"BlueLink PIN locked: {error_msg}")
-                
+
                 # Auth errors
                 if error_code in [401, 403, 1003, 1005]:
                     raise AuthError(f"BlueLink auth error: {error_msg}")
-                
+
                 raise ClientError(f"BlueLink API error: {error_msg}")
-            
+
             # Success - return response
             return response
-            
+
         except ContentTypeError as e:
             response_text = await response.text()
             _LOGGER.warning(f"ContentTypeError parsing response: {e}. Text: {response_text[:500]}")

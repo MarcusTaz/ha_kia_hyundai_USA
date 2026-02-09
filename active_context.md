@@ -2,7 +2,7 @@
 
 ## Repository
 - **GitHub:** https://github.com/MarcusTaz/ha_kia_hyundai_USA
-- **Current Version:** v3.1.2
+- **Current Version:** v3.1.3
 - **Domain:** `ha_kia_hyundai`
 - **Home Assistant Min Version:** 2023.1.0
 

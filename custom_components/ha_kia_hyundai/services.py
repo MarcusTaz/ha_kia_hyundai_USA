@@ -1,7 +1,5 @@
 from logging import getLogger
-from typing import cast
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_DEVICE_ID
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import device_registry
@@ -104,26 +102,26 @@ def _get_coordinator_from_device(
         hass: HomeAssistant, call: ServiceCall
 ) -> VehicleCoordinator:
     coordinators = hass.data.get(DOMAIN, {}).get(COORDINATORS_KEY, {})
-    
+
     # If only one vehicle, use it
     if len(coordinators) == 1:
         return list(coordinators.values())[0]
-    
+
     # Otherwise, look up by device_id
     device_entry = device_registry.async_get(hass).async_get(
         call.data[ATTR_DEVICE_ID]
     )
-    
+
     if device_entry is None:
         raise ValueError("Device not found")
-    
+
     # The device identifiers contain (DOMAIN, vehicle_id)
     for identifier in device_entry.identifiers:
         if identifier[0] == DOMAIN:
             vehicle_id = identifier[1]
             if vehicle_id in coordinators:
                 return coordinators[vehicle_id]
-    
+
     raise ValueError(f"No coordinator found for device {call.data[ATTR_DEVICE_ID]}")
 
 @callback

@@ -9,7 +9,7 @@ from __future__ import annotations
 from asyncio import sleep
 from datetime import timedelta, datetime
 from logging import getLogger
-from typing import Any, Union
+from typing import Any
 
 from aiohttp import ClientError
 from homeassistant.config_entries import ConfigEntry
@@ -36,7 +36,7 @@ from .util import safely_get_json_value, convert_last_updated_str_to_datetime
 _LOGGER = getLogger(__name__)
 
 # Type alias for all supported API clients
-ApiConnection = Union[UsKia, UsHyundai, UsGenesis]
+ApiConnection = UsKia | UsHyundai | UsGenesis
 
 
 class VehicleCoordinator(DataUpdateCoordinator):
@@ -332,15 +332,6 @@ class VehicleCoordinator(DataUpdateCoordinator):
             "vehicleConfig.vehicleFeature.remoteFeature.heatedSteeringWheel",
             bool,
         )
-
-    @property
-    def steering_wheel_heat_step_level(self) -> int:
-        """Return steering wheel heat step level (number of levels: 1 or 2)."""
-        return safely_get_json_value(
-            self.data,
-            "vehicleConfig.vehicleFeature.remoteFeature.steeringWheelStepLevel",
-            int,
-        ) or 1
 
     @property
     def climate_steering_wheel_step(self) -> int:

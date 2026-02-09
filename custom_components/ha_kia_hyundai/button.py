@@ -6,7 +6,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import VehicleCoordinator, get_all_coordinators
-from .const import DOMAIN
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 _LOGGER = getLogger(__name__)
@@ -25,7 +24,7 @@ async def async_setup_entry(
         if coordinator.can_remote_climate:
             entities.append(RemoteStartButton(coordinator=coordinator))
             entities.append(RemoteStopButton(coordinator=coordinator))
-    
+
     async_add_entities(entities)
 
 
@@ -77,7 +76,7 @@ class RemoteStartButton(VehicleCoordinatorBaseEntity, ButtonEntity):
             self.coordinator.desired_left_rear_seat_comfort,
             self.coordinator.desired_right_rear_seat_comfort,
         )
-        
+
         await self.coordinator.api_connection.start_climate(
             vehicle_id=self.coordinator.vehicle_id,
             climate=True,

@@ -23,7 +23,7 @@ BRAND_GENESIS: str = "genesis"
 
 BRANDS = {
     BRAND_KIA: "Kia",
-    BRAND_HYUNDAI: "Hyundai", 
+    BRAND_HYUNDAI: "Hyundai",
     BRAND_GENESIS: "Genesis",
 }
 
@@ -70,7 +70,7 @@ SEAT_STATUS = {
 
 class SeatSettings(Enum):
     """Seat heating/cooling settings for climate control.
-    
+
     These values are sent to the API when starting climate with seat settings.
     The kia-hyundai-api uses these values directly in the API request.
     """

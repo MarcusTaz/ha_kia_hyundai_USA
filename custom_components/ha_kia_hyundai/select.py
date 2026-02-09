@@ -13,7 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import VehicleCoordinator, get_all_coordinators
-from .const import DOMAIN, SEAT_STATUS, STR_TO_SEAT_SETTING
+from .const import SEAT_STATUS, STR_TO_SEAT_SETTING
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ async def async_setup_entry(
             if coordinator.has_climate_seats
             if select_description.exists_fn(coordinator)
         )
-    
+
     async_add_entities(entities)
 
 
@@ -124,7 +124,7 @@ class SeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
         installed_options = self.entity_description.options_fn(self.coordinator)
         heat_type = installed_options.get(HEAT_TYPE, 0) if installed_options else 0
         steps = installed_options.get(STEPS, 3) if installed_options else 3  # Default to 3 levels
-        
+
         # If heat_type is 0 or unknown, default to showing all options (heat + cool with 3 levels)
         if heat_type == 3 or heat_type == 0:
             # Both heat and cool, or unknown - show all options
@@ -186,7 +186,7 @@ class SeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
 
 class SteeringWheelHeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, RestoreEntity):
     """Select entity for steering wheel heat level.
-    
+
     Note: The API currently only supports on/off (0/1) for steeringWheel.
     This UI allows selecting the desired level, but until the correct API
     format is determined, the actual command will use the heating toggle.

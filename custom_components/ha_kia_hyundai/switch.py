@@ -8,7 +8,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import VehicleCoordinator, get_all_coordinators
-from .const import DOMAIN
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 _LOGGER = getLogger(__name__)
@@ -24,14 +23,14 @@ async def async_setup_entry(
     for coordinator in coordinators.values():
         if coordinator.is_ev:
             switches.append(ChargingSwitch(coordinator=coordinator))
-        
+
         if coordinator.can_remote_climate:
             _LOGGER.debug("Adding climate related switch entities for %s", coordinator.vehicle_name)
             switches.append(ClimateDesiredDefrostSwitch(coordinator=coordinator))
             switches.append(ClimateDesiredHeatingAccSwitch(coordinator=coordinator))
         else:
             _LOGGER.debug("Skipping climate related switch entities for %s", coordinator.vehicle_name)
-    
+
     async_add_entities(switches)
 
 

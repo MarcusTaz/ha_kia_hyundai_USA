@@ -20,37 +20,37 @@ import time
 from functools import partial
 from aiohttp import ClientSession, ClientResponse
 
-from .errors import AuthError, ActionAlreadyInProgressError, PINLockedError, TokenExpiredError
+from .errors import AuthError, PINLockedError
 from .const import (
     GENESIS_API_URL_HOST,
     GENESIS_LOGIN_API_BASE,
     GENESIS_API_URL_BASE,
     SeatSettings,
 )
-from .util_http import request_with_logging_bluelink, request_with_active_session
+from .util_http import request_with_logging_bluelink
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def _parse_supported_levels(supported_levels_str: str) -> dict:
     """Parse supportedLevels string from API and build seat setting mapping.
-    
+
     The API returns supportedLevels like '2,6,7,8,3,4,5'.
     Based on testing, the pattern is:
     - Lowest value = Off
     - Next 3 lower values = Cool (Low, Medium, High)
     - Next 3 higher values = Heat (Low, Medium, High)
-    
+
     Returns a dict mapping our SeatSettings enum values to API values.
     """
     if not supported_levels_str:
         # Default mapping if no levels provided
         return {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6}
-    
+
     # Parse and sort the levels
     levels = sorted([int(x.strip()) for x in supported_levels_str.split(",") if x.strip()])
     _LOGGER.debug("Parsed supportedLevels: %s", levels)
-    
+
     if len(levels) < 7:
         # Not enough levels for full heat+cool, use simple mapping
         mapping = {0: levels[0] if levels else 0}  # Off
@@ -58,7 +58,7 @@ def _parse_supported_levels(supported_levels_str: str) -> dict:
             if i <= 6:
                 mapping[i] = val
         return mapping
-    
+
     # Build mapping from sorted levels:
     # levels[0] = Off
     # levels[1:4] = Cool (Low, Medium, High)
@@ -82,17 +82,17 @@ _seat_level_mappings: dict[str, dict] = {}
 
 def _seat_settings_genesis(level: SeatSettings | None, vehicle_id: str = "") -> int:
     """Convert seat setting to Genesis/Hyundai BlueLink API value.
-    
+
     Uses the supportedLevels from the API to determine correct values.
     """
     if level is None:
         # Get Off value from mapping or default to 2
         mapping = _seat_level_mappings.get(vehicle_id, {})
         return mapping.get(0, 2)
-    
+
     level_value = level.value if hasattr(level, 'value') else level
     _LOGGER.debug("_seat_settings_genesis: input level=%s, value=%s, vehicle=%s", level, level_value, vehicle_id)
-    
+
     # Get mapping for this vehicle, or use default
     mapping = _seat_level_mappings.get(vehicle_id, {
         0: 2,  # Off
@@ -103,7 +103,7 @@ def _seat_settings_genesis(level: SeatSettings | None, vehicle_id: str = "") -> 
         5: 7,  # HeatMedium
         6: 8,  # HeatHigh
     })
-    
+
     result = mapping.get(level_value, mapping.get(0, 2))
     _LOGGER.debug("_seat_settings_genesis: output value=%s (from mapping: %s)", result, mapping)
     return result
@@ -111,14 +111,14 @@ def _seat_settings_genesis(level: SeatSettings | None, vehicle_id: str = "") -> 
 
 class UsGenesis:
     """Genesis Connected Services USA API client (PIN-based authentication)."""
-    
+
     _ssl_context = None
     access_token: str | None = None
     refresh_token: str | None = None
     token_expires_at: datetime | None = None  # Track when the token expires
     vehicles: list[dict] | None = None
     last_action = None
-    
+
     # Token refresh buffer - refresh this many seconds before expiration
     TOKEN_REFRESH_BUFFER_SECONDS = 300  # 5 minutes before expiration
 
@@ -131,7 +131,7 @@ class UsGenesis:
             client_session: ClientSession | None = None
     ):
         """Initialize Genesis API client.
-        
+
         Parameters
         ----------
         username : str
@@ -174,10 +174,10 @@ class UsGenesis:
         utc_offset_hours = int(
             (datetime.fromtimestamp(ts) - datetime.utcfromtimestamp(ts)).total_seconds() / 60 / 60
         )
-        
+
         origin = "https://" + GENESIS_API_URL_HOST
         referer = origin + "/login"
-        
+
         headers = {
             "content-type": "application/json;charset=UTF-8",
             "accept": "application/json, text/plain, */*",
@@ -220,55 +220,55 @@ class UsGenesis:
 
     def _is_token_valid(self) -> bool:
         """Check if the current access token is still valid.
-        
+
         Returns True if:
         - We have an access token
         - Either we don't track expiration, or the token hasn't expired yet
-        
+
         Uses a buffer (TOKEN_REFRESH_BUFFER_SECONDS) to refresh before actual expiration.
         """
         if self.access_token is None:
             _LOGGER.debug("Token invalid: no access token")
             return False
-        
+
         if self.token_expires_at is None:
             # No expiration tracking, assume valid
             _LOGGER.debug("Token assumed valid: no expiration tracking")
             return True
-        
+
         # Check if token expires within the buffer period
         now = datetime.now(timezone.utc)
         expires_with_buffer = self.token_expires_at - timedelta(seconds=self.TOKEN_REFRESH_BUFFER_SECONDS)
-        
+
         if now >= expires_with_buffer:
             time_until_expiry = (self.token_expires_at - now).total_seconds()
             _LOGGER.info("Token expiring soon or expired: expires in %.0f seconds", time_until_expiry)
             return False
-        
+
         time_until_expiry = (self.token_expires_at - now).total_seconds()
         _LOGGER.debug("Token valid: expires in %.0f seconds", time_until_expiry)
         return True
 
     async def _ensure_token_valid(self):
         """Ensure we have a valid token, refreshing if necessary.
-        
+
         This method should be called before any API request that requires authentication.
         It proactively refreshes the token before it expires to prevent auth errors
         during commands (which could cause PIN lockout).
         """
         if self._is_token_valid():
             return
-        
+
         _LOGGER.info("Token invalid or expiring soon, refreshing...")
-        
+
         # Clear the old token to force a fresh login
         old_expires_at = self.token_expires_at
         self.access_token = None
         self.token_expires_at = None
-        
+
         try:
             await self.login()
-            _LOGGER.info("Token refreshed successfully. Old expiry: %s, New expiry: %s", 
+            _LOGGER.info("Token refreshed successfully. Old expiry: %s, New expiry: %s",
                         old_expires_at, self.token_expires_at)
         except PINLockedError:
             # Re-raise PIN locked errors - user needs to wait
@@ -313,39 +313,39 @@ class UsGenesis:
         _LOGGER.info("Genesis login attempt for user: %s", self.username)
         _LOGGER.info("Using API host: %s", GENESIS_API_URL_HOST)
         _LOGGER.info("Login URL: %s", GENESIS_LOGIN_API_BASE + "oauth/token")
-        
+
         url = GENESIS_LOGIN_API_BASE + "oauth/token"
         data = {"username": self.username, "password": self.password}
-        
+
         headers = self._api_headers()
-        _LOGGER.info("Request headers (sanitized): brandIndicator=%s, client_id=%s", 
+        _LOGGER.info("Request headers (sanitized): brandIndicator=%s, client_id=%s",
                     headers.get("brandIndicator"), headers.get("client_id"))
-        
+
         response = await self._post_request_with_logging_and_errors_raised(
             url=url,
             json_body=data,
             headers=headers,
         )
-        
+
         response_json = await response.json()
         _LOGGER.info("Genesis login response status: %s", response.status)
         _LOGGER.info("Genesis login response keys: %s", list(response_json.keys()))
-        
+
         # Log specific fields for debugging
         if "access_token" in response_json:
             _LOGGER.info("Response contains access_token: YES (length: %d)", len(response_json.get("access_token", "")))
         else:
             _LOGGER.info("Response contains access_token: NO")
-            
+
         if "errorCode" in response_json:
             _LOGGER.info("Response errorCode: %s", response_json.get("errorCode"))
             _LOGGER.info("Response errorMessage: %s", response_json.get("errorMessage"))
-        
+
         # Check if we got an access token
         if response_json.get("access_token"):
             self.access_token = response_json["access_token"]
             self.refresh_token = response_json.get("refresh_token")
-            
+
             # Parse token expiration time
             expires_in = response_json.get("expires_in")
             if expires_in:
@@ -359,37 +359,37 @@ class UsGenesis:
             else:
                 _LOGGER.info("No expires_in in response, token expiration tracking disabled")
                 self.token_expires_at = None
-            
+
             _LOGGER.info("========== GENESIS LOGIN SUCCESS ==========")
             return
-        
+
         # Login failed
         _LOGGER.error("========== GENESIS LOGIN FAILED ==========")
         _LOGGER.error("Response: %s", response_json)
-        
+
         error_msg = response_json.get("errorMessage", response_json.get("message", "Unknown error"))
-        
+
         # Check for PIN locked error
         if "PIN" in error_msg.upper() and "LOCKED" in error_msg.upper():
             raise PINLockedError(f"Genesis PIN locked: {error_msg}")
-        
+
         raise AuthError(f"Genesis login failed: {error_msg}")
 
     async def get_vehicles(self):
         """Get list of vehicles for the account."""
         await self._ensure_token_valid()
-        
+
         url = GENESIS_API_URL_BASE + "enrollment/details/" + self.username
         headers = self._get_authenticated_headers()
-        
+
         response = await self._get_request_with_logging_and_errors_raised(
             url=url,
             headers=headers,
         )
-        
+
         response_json = await response.json()
         _LOGGER.debug("Genesis get_vehicles response: %s", response_json)
-        
+
         self.vehicles = []
         for entry in response_json.get("enrolledVehicleDetails", []):
             vehicle_details = entry.get("vehicleDetails", {})
@@ -407,7 +407,7 @@ class UsGenesis:
             }
             if vehicle.get("enrollmentStatus") != "CANCELLED":
                 self.vehicles.append(vehicle)
-        
+
         return self.vehicles
 
     async def find_vehicle(self, vehicle_id: str) -> dict:
@@ -424,10 +424,10 @@ class UsGenesis:
     async def get_cached_vehicle_status(self, vehicle_id: str):
         """Get cached vehicle status from Genesis API."""
         await self._ensure_token_valid()
-        
+
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
-        
+
         url = GENESIS_API_URL_BASE + "rcs/rvs/vehicleStatus"
         response = await self._get_request_with_logging_and_errors_raised(
             url=url,
@@ -435,7 +435,7 @@ class UsGenesis:
         )
         response_json = await response.json()
         _LOGGER.debug("Genesis vehicle status response: %s", response_json)
-        
+
         # Get vehicle details
         details_url = GENESIS_API_URL_BASE + "enrollment/details/" + self.username
         details_response = await self._get_request_with_logging_and_errors_raised(
@@ -443,7 +443,7 @@ class UsGenesis:
             headers=self._get_authenticated_headers(),
         )
         details_json = await details_response.json()
-        
+
         vehicle_details = {}
         seat_configs = []
         for entry in details_json.get("enrolledVehicleDetails", []):
@@ -451,7 +451,7 @@ class UsGenesis:
                 vehicle_details = entry.get("vehicleDetails", {})
                 seat_configs = vehicle_details.get("seatConfigurations", {}).get("seatConfigs", [])
                 break
-        
+
         # Parse seat configurations from API
         # seatLocationID: 1=driver, 2=passenger, 3=rear left, 4=rear right
         seat_config_map = {}
@@ -480,31 +480,31 @@ class UsGenesis:
             levels_list = [x.strip() for x in levels_str.split(",") if x.strip()]
             heat_vent_step = len(levels_list) if levels_list else 0
             seat_config_map[location_id] = {"heatVentType": heat_vent_type, "heatVentStep": heat_vent_step}
-            
+
             # Parse and cache the seat level mapping from first seat with levels
             if seat_level_mapping is None and levels_str:
                 seat_level_mapping = _parse_supported_levels(levels_str)
-        
+
         # Store mapping for this vehicle
         if seat_level_mapping:
             _seat_level_mappings[vehicle_id] = seat_level_mapping
             _LOGGER.info("Genesis seat level mapping from API for %s: %s", vehicle_id, seat_level_mapping)
-        
+
         _LOGGER.debug("Genesis seat configurations from API: %s", seat_config_map)
-        
+
         # Parse vehicle capabilities from API
         steering_wheel_heat_capable = vehicle_details.get("steeringWheelHeatCapable", "NO") == "YES"
         side_mirror_heat_capable = vehicle_details.get("sideMirrorHeatCapable", "NO") == "YES"
         rear_window_heat_capable = vehicle_details.get("rearWindowHeatCapable", "NO") == "YES"
         fatc_available = vehicle_details.get("fatcAvailable", "N") == "Y"  # Remote climate/start
         bluelink_enabled = vehicle_details.get("bluelinkEnabled", False)
-        
+
         _LOGGER.debug(
             "Genesis vehicle capabilities: steering_heat=%s, mirror_heat=%s, rear_window=%s, fatc=%s, bluelink=%s",
-            steering_wheel_heat_capable, side_mirror_heat_capable, rear_window_heat_capable, 
+            steering_wheel_heat_capable, side_mirror_heat_capable, rear_window_heat_capable,
             fatc_available, bluelink_enabled
         )
-        
+
         # Get location
         location = None
         try:
@@ -518,10 +518,10 @@ class UsGenesis:
                 location = loc_json
         except Exception as e:
             _LOGGER.debug("Failed to get location: %s", e)
-        
+
         # Transform to match Kia format
         vehicle_status = response_json.get("vehicleStatus", {})
-        
+
         transformed = {
             "vinKey": vehicle.get("vin"),
             "vehicleConfig": {
@@ -585,6 +585,11 @@ class UsGenesis:
                             "hood": 1 if vehicle_status.get("hoodOpen") else 0,
                         },
                         "lowFuelLight": vehicle_status.get("lowFuelLight", False),
+                        "fuelLevel": vehicle_status.get("fuelLevel"),
+                        "distanceToEmpty": {
+                            "value": vehicle_status.get("dte", {}).get("value") if vehicle_status.get("dte") else None,
+                            "unit": vehicle_status.get("dte", {}).get("unit", 3) if vehicle_status.get("dte") else None,
+                        },
                         "ign3": vehicle_status.get("ign3", False),
                         "transCond": vehicle_status.get("transCond", True),
                         "dateTime": {
@@ -597,7 +602,7 @@ class UsGenesis:
                 },
             },
         }
-        
+
         # Add EV-specific data if applicable
         if vehicle.get("evStatus") == "E":
             ev_status = vehicle_status.get("evStatus", {})
@@ -609,24 +614,24 @@ class UsGenesis:
                 "remainChargeTime": ev_status.get("remainTime2", {}),
                 "targetSOC": ev_status.get("reservChargeInfos", {}).get("targetSOClist", []),
             }
-        
+
         if location:
             transformed["lastVehicleInfo"]["location"] = {
                 "coord": location.get("coord", {}),
                 "head": location.get("head", 0),
                 "speed": location.get("speed", {}),
             }
-        
+
         return transformed
 
     async def request_vehicle_data_sync(self, vehicle_id: str):
         """Request fresh vehicle data sync."""
         await self._ensure_token_valid()
-        
+
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
         headers["REFRESH"] = "true"
-        
+
         url = GENESIS_API_URL_BASE + "rcs/rvs/vehicleStatus"
         await self._get_request_with_logging_and_errors_raised(
             url=url,
@@ -637,14 +642,14 @@ class UsGenesis:
         """Lock the vehicle."""
         _LOGGER.info("===== GENESIS LOCK CALLED =====")
         await self._ensure_token_valid()
-        
+
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
-        
+
         url = GENESIS_API_URL_BASE + "rcs/rdo/off"
         _LOGGER.debug("Genesis lock URL: %s", url)
         _LOGGER.debug("Genesis lock headers: %s", {k: v for k, v in headers.items() if k.lower() not in ['accesstoken', 'bluelinkservicepin']})
-        
+
         # BlueLink API expects empty body for lock/unlock
         response = await self._post_request_with_logging_and_errors_raised(
             url=url,
@@ -657,14 +662,14 @@ class UsGenesis:
         """Unlock the vehicle."""
         _LOGGER.info("===== GENESIS UNLOCK CALLED =====")
         await self._ensure_token_valid()
-        
+
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
-        
+
         url = GENESIS_API_URL_BASE + "rcs/rdo/on"
         _LOGGER.debug("Genesis unlock URL: %s", url)
         _LOGGER.debug("Genesis unlock headers: %s", {k: v for k, v in headers.items() if k.lower() not in ['accesstoken', 'bluelinkservicepin']})
-        
+
         # BlueLink API expects empty body for lock/unlock
         response = await self._post_request_with_logging_and_errors_raised(
             url=url,
@@ -693,20 +698,20 @@ class UsGenesis:
             "start_climate params: temp=%s, defrost=%s, climate=%s, heating=%s, steering_wheel=%s, duration=%s",
             set_temp, defrost, climate, heating, steering_wheel_heat, duration
         )
-        
+
         await self._ensure_token_valid()
-        
+
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
-        
+
         is_ev = vehicle.get("evStatus") == "E"
         generation = vehicle.get("generation", 2)
-        
+
         if is_ev:
             url = GENESIS_API_URL_BASE + "evc/fatc/start"
         else:
             url = GENESIS_API_URL_BASE + "rcs/rsc/start"
-        
+
         if is_ev:
             data = {
                 "airCtrl": int(climate),
@@ -742,9 +747,9 @@ class UsGenesis:
             # Only include duration if user specified it
             if duration is not None:
                 data["igniOnDuration"] = duration
-        
+
         _LOGGER.debug("Genesis start_climate data: %s", data)
-        
+
         response = await self._post_request_with_logging_and_errors_raised(
             url=url,
             json_body=data,
@@ -755,17 +760,17 @@ class UsGenesis:
     async def stop_climate(self, vehicle_id: str):
         """Stop climate control."""
         await self._ensure_token_valid()
-        
+
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
-        
+
         is_ev = vehicle.get("evStatus") == "E"
-        
+
         if is_ev:
             url = GENESIS_API_URL_BASE + "evc/fatc/stop"
         else:
             url = GENESIS_API_URL_BASE + "rcs/rsc/stop"
-        
+
         response = await self._post_request_with_logging_and_errors_raised(
             url=url,
             json_body={},
@@ -776,15 +781,15 @@ class UsGenesis:
     async def start_charge(self, vehicle_id: str):
         """Start charging (EV only)."""
         await self._ensure_token_valid()
-        
+
         vehicle = await self.find_vehicle(vehicle_id)
         if vehicle.get("evStatus") != "E":
             _LOGGER.warning("start_charge called on non-EV vehicle")
             return
-        
+
         headers = self._get_vehicle_headers(vehicle)
         url = GENESIS_API_URL_BASE + "evc/charge/start"
-        
+
         response = await self._post_request_with_logging_and_errors_raised(
             url=url,
             json_body={},
@@ -795,15 +800,15 @@ class UsGenesis:
     async def stop_charge(self, vehicle_id: str):
         """Stop charging (EV only)."""
         await self._ensure_token_valid()
-        
+
         vehicle = await self.find_vehicle(vehicle_id)
         if vehicle.get("evStatus") != "E":
             _LOGGER.warning("stop_charge called on non-EV vehicle")
             return
-        
+
         headers = self._get_vehicle_headers(vehicle)
         url = GENESIS_API_URL_BASE + "evc/charge/stop"
-        
+
         response = await self._post_request_with_logging_and_errors_raised(
             url=url,
             json_body={},
@@ -819,22 +824,22 @@ class UsGenesis:
     ):
         """Set charge limits (EV only)."""
         await self._ensure_token_valid()
-        
+
         vehicle = await self.find_vehicle(vehicle_id)
         if vehicle.get("evStatus") != "E":
             _LOGGER.warning("set_charge_limits called on non-EV vehicle")
             return
-        
+
         headers = self._get_vehicle_headers(vehicle)
         url = GENESIS_API_URL_BASE + "evc/charge/targetsoc/set"
-        
+
         data = {
             "targetSOClist": [
                 {"plugType": 0, "targetSOClevel": int(dc_limit)},
                 {"plugType": 1, "targetSOClevel": int(ac_limit)},
             ]
         }
-        
+
         response = await self._post_request_with_logging_and_errors_raised(
             url=url,
             json_body=data,
