@@ -127,6 +127,27 @@ Frequent API calls can wake your vehicle and drain the 12V battery. The default 
 
 ## Troubleshooting
 
+### Common Issues (Not Bugs)
+
+**Sensors show "Unavailable" or EV sensors are missing:**
+- Your vehicle is likely in sleep mode. Press the **"Request Wake Up"** button and wait 2-3 minutes.
+- Verify the data appears in the official Kia/Hyundai/Genesis app first.
+- Vehicles in sleep mode do not report EV battery, charging status, or range data.
+
+**Sensors don't appear after initial setup:**
+- This is normal! Vehicles need to be woken up to report data.
+- Press the "Request Wake Up" button, wait 2-3 minutes, then check again.
+- You may need to restart Home Assistant after the first successful data refresh.
+
+**Data is stale or not updating:**
+- Check that your Kia Connect / BlueLink subscription is active.
+- The default polling interval is 10 minutes to avoid draining your 12V battery.
+- Use "Request Wake Up" sparingly - excessive use can drain your battery.
+
+**"Please try again later" errors:**
+- You've hit Kia/Hyundai's rate limit. Wait 30-60 minutes before trying again.
+- Avoid rapidly pressing buttons or refreshing.
+
 ### Authentication Failed
 
 **Kia:**
