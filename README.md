@@ -22,6 +22,7 @@ A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered
 - Seat heating and cooling
 - Vehicle location tracking
 - Battery and charging status (EV/hybrid)
+- Battery preconditioning status (EV)
 - Charge limit control (AC/DC)
 - Door, trunk, and hood status
 - Tire pressure warnings
@@ -85,6 +86,7 @@ After authentication, the integration will display all vehicles found in your ac
 - EV battery level (if applicable)
 - Charging status
 - Plugged in status
+- Battery preconditioning status (EV)
 - Odometer
 - Estimated range
 - Last update timestamp
@@ -133,6 +135,7 @@ Frequent API calls can wake your vehicle and drain the 12V battery. The default 
 - Your vehicle is likely in sleep mode. Press the **"Request Wake Up"** button and wait 2-3 minutes.
 - Verify the data appears in the official Kia/Hyundai/Genesis app first.
 - Vehicles in sleep mode do not report EV battery, charging status, or range data.
+- **Note:** As of v3.1.4, most sensors now preserve their last known value when the vehicle sleeps instead of showing "unavailable".
 
 **Sensors don't appear after initial setup:**
 - This is normal! Vehicles need to be woken up to report data.
@@ -154,11 +157,13 @@ Frequent API calls can wake your vehicle and drain the 12V battery. The default 
 - Verify your Kia Connect credentials work in the official app
 - Check your email/phone for the OTP code
 - OTP codes expire after a few minutes
+- If your session expires, use the "Reconfigure" option in the integration menu to re-authenticate (no need to delete and re-add)
 
 **Hyundai/Genesis:**
 - Verify your credentials work in the official Blue Link or Genesis app
 - Ensure your PIN is exactly 4 digits
 - The PIN is the same one you use in the official app
+- If your session expires, use the "Reconfigure" option in the integration menu to re-authenticate
 
 ### Vehicle Not Found
 

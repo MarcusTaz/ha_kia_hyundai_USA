@@ -56,6 +56,7 @@ SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
         device_class=SensorDeviceClass.DISTANCE,
         native_unit_of_measurement=UnitOfLength.MILES,
         state_class=SensorStateClass.MEASUREMENT,
+        preserve_state=True,
     ),
     KiaSensorEntityDescription(
         key="last_synced_to_cloud",
@@ -102,6 +103,7 @@ SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
         icon="mdi:road-variant",
         native_unit_of_measurement=UnitOfLength.MILES,
         state_class=SensorStateClass.MEASUREMENT,
+        preserve_state=True,
         exists_fn=lambda c: c.is_ev,
     ),
     KiaSensorEntityDescription(
@@ -110,6 +112,7 @@ SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
         icon="mdi:fuel",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
+        preserve_state=True,
         exists_fn=lambda c: not c.is_ev,  # Only show for ICE/hybrid vehicles
     ),
     KiaSensorEntityDescription(
@@ -119,6 +122,7 @@ SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
         icon="mdi:road-variant",
         native_unit_of_measurement=UnitOfLength.MILES,
         state_class=SensorStateClass.MEASUREMENT,
+        preserve_state=True,
     ),
     KiaSensorEntityDescription(
         key="total_remaining_range_value",
@@ -127,6 +131,7 @@ SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
         icon="mdi:road-variant",
         native_unit_of_measurement=UnitOfLength.MILES,
         state_class=SensorStateClass.MEASUREMENT,
+        preserve_state=True,
     ),
     KiaSensorEntityDescription(
         key="car_battery_level",
