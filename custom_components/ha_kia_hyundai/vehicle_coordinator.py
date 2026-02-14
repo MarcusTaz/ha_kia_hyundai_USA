@@ -442,6 +442,15 @@ class VehicleCoordinator(DataUpdateCoordinator):
         )
 
     @property
+    def ev_battery_preconditioning(self) -> bool | None:
+        """Return if EV battery preconditioning is active."""
+        return safely_get_json_value(
+            self.data,
+            "lastVehicleInfo.vehicleStatusRpt.vehicleStatus.evStatus.batteryPrecondition",
+            bool
+        )
+
+    @property
     def ev_plugged_in(self) -> bool:
         """Return if EV is plugged in."""
         return safely_get_json_value(

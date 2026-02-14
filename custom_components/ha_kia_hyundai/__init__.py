@@ -378,6 +378,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     except AuthError as err:
         _LOGGER.error("Authentication failed: %s", err)
         raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
+    except ConfigEntryAuthFailed:
+        # Re-raise to trigger reauth flow in Home Assistant
+        raise
     except Exception as err:
         _LOGGER.exception("Error setting up integration: %s", err)
         raise ConfigEntryError(f"Error setting up integration: {err}") from err
