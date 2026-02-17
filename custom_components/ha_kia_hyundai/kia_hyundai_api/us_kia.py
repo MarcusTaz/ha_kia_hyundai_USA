@@ -463,21 +463,54 @@ class UsKia:
             json_body=body,
         )
         response_json = await response.json()
-        return response_json["payload"]["vehicleInfoList"][0]
+        vehicle_data = response_json["payload"]["vehicleInfoList"][0]
+
+        # If targetSOC is missing from cached response but we have it from a force refresh,
+        # merge it in. This fixes charge limits not appearing for some vehicles (e.g., 2020 Niro EV)
+        # where cmm/gvi doesn't return targetSOC but rems/rvs does.
+        try:
+            ev_status = vehicle_data.get("lastVehicleInfo", {}).get("vehicleStatusRpt", {}).get("vehicleStatus", {}).get("evStatus", {})
+            if ev_status and ev_status.get("targetSOC") is None:
+                stored_target_soc = getattr(self, "_force_refresh_target_soc", {}).get(vehicle_id)
+                if stored_target_soc:
+                    ev_status["targetSOC"] = stored_target_soc
+                    _LOGGER.debug("Merged stored targetSOC into cached response for vehicle %s", vehicle_id)
+        except Exception as err:
+            _LOGGER.debug("Could not merge targetSOC into cached response: %s", err)
+
+        return vehicle_data
 
     @request_with_active_session
     async def request_vehicle_data_sync(self, vehicle_id: str):
-        """Request vehicle to sync fresh data"""
+        """Request vehicle to sync fresh data.
+
+        Note: The rems/rvs endpoint returns targetSOC data that may not be present
+        in the cmm/gvi (cached) endpoint for some vehicles (e.g., 2020 Kia Niro EV).
+        We capture and store this data so charge limits can be retrieved even when
+        the cached endpoint omits them.
+        """
         url = API_URL_BASE + "rems/rvs"
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
         body = {
             "requestType": 0  # value of 1 would return cached results instead of forcing update
         }
-        await self._post_request_with_logging_and_errors_raised(
+        response = await self._post_request_with_logging_and_errors_raised(
             vehicle_key=vehicle_key,
             url=url,
             json_body=body,
         )
+        # Parse targetSOC from force refresh response and store it
+        # This is needed because cmm/gvi doesn't return targetSOC for some vehicles
+        try:
+            response_json = await response.json()
+            target_soc = response_json.get("payload", {}).get("vehicleStatusRpt", {}).get("vehicleStatus", {}).get("evStatus", {}).get("targetSOC")
+            if target_soc:
+                if not hasattr(self, "_force_refresh_target_soc"):
+                    self._force_refresh_target_soc = {}
+                self._force_refresh_target_soc[vehicle_id] = target_soc
+                _LOGGER.debug("Stored targetSOC from force refresh for vehicle %s: %s", vehicle_id, target_soc)
+        except Exception as err:
+            _LOGGER.debug("Could not parse targetSOC from force refresh response: %s", err)
 
     @request_with_active_session
     async def check_last_action_finished(
