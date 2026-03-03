@@ -84,6 +84,24 @@ def _parse_supported_levels(supported_levels_str: str) -> dict:
 _seat_level_mappings: dict[str, dict] = {}
 
 
+def _get_heating1_value(steering_wheel_heat: int, heating: bool) -> int:
+    """Calculate heating1 API value from steering wheel and heating settings.
+
+    Hyundai BlueLink API heating1 values:
+    - 0 = Off
+    - 2 = Rear Window Only
+    - 3 = Steering Wheel Only (USA only)
+    - 4 = Steering Wheel + Side/Back Defrosters
+    """
+    if steering_wheel_heat > 0 and heating:
+        return 4  # Steering wheel + defrosters
+    elif steering_wheel_heat > 0:
+        return 3  # Steering wheel only
+    elif heating:
+        return 2  # Rear window only
+    return 0  # Off
+
+
 def _seat_settings_hyundai(level: SeatSettings | None, vehicle_id: str = "") -> int:
     """Convert seat setting to Hyundai BlueLink API value.
 
@@ -725,12 +743,17 @@ class UsHyundai:
             url = HYUNDAI_API_URL_BASE + "rcs/rsc/start"
 
         # Build climate request data
+        # Calculate heating1 value from steering wheel and heating settings
+        heating1_value = _get_heating1_value(steering_wheel_heat, heating)
+        _LOGGER.debug("Hyundai heating1 value: %s (steering_wheel=%s, heating=%s)",
+                      heating1_value, steering_wheel_heat, heating)
+
         if is_ev:
             data = {
                 "airCtrl": int(climate),
                 "airTemp": {"value": str(set_temp), "unit": 1},
                 "defrost": defrost,
-                "heating1": int(heating),
+                "heating1": heating1_value,
             }
             # Generation 3+ vehicles support seat heater and duration
             if generation >= 3:
@@ -749,7 +772,7 @@ class UsHyundai:
                 "airCtrl": int(climate),
                 "airTemp": {"unit": 1, "value": set_temp},
                 "defrost": defrost,
-                "heating1": int(heating),
+                "heating1": heating1_value,
                 "seatHeaterVentInfo": {
                     "drvSeatHeatState": _seat_settings_hyundai(driver_seat, vehicle_id),
                     "astSeatHeatState": _seat_settings_hyundai(passenger_seat, vehicle_id),
