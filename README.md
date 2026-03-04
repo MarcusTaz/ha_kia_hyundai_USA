@@ -3,6 +3,7 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![GitHub Release](https://img.shields.io/github/release/MarcusTaz/ha_kia_hyundai_USA.svg)](https://github.com/MarcusTaz/ha_kia_hyundai_USA/releases)
 [![License](https://img.shields.io/github/license/MarcusTaz/ha_kia_hyundai_USA.svg)](LICENSE)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/MarcusTaz)
 
 A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered in the United States**. This is a community-maintained fork with active development.
 
@@ -262,8 +263,3 @@ This integration is not affiliated with, endorsed by, or connected to Kia Motors
 - [GitHub Issues](https://github.com/MarcusTaz/ha_kia_hyundai_USA/issues)
 - [GitHub Discussions](https://github.com/MarcusTaz/ha_kia_hyundai_USA/discussions)
 
-## Support the Project
-
-If this integration is useful to you, consider supporting continued development:
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/MarcusTaz)
