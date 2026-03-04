@@ -261,3 +261,9 @@ This integration is not affiliated with, endorsed by, or connected to Kia Motors
 
 - [GitHub Issues](https://github.com/MarcusTaz/ha_kia_hyundai_USA/issues)
 - [GitHub Discussions](https://github.com/MarcusTaz/ha_kia_hyundai_USA/discussions)
+
+## Support the Project
+
+If this integration is useful to you, consider supporting continued development:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/MarcusTaz)
