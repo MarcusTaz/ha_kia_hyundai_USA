@@ -17,8 +17,10 @@
 			"settings": {
 				"files.eol": "\n",
 				"editor.tabSize": 4,
+				"python.analysis.extraPaths": [
+					"/usr/src/homeassistant"
+				],
 				"python.defaultInterpreterPath": "/usr/local/bin/python",
-				"python.analysis.autoSearchPaths": false,
 				"python.linting.pylintEnabled": true,
 				"python.linting.enabled": true,
 				"python.formatting.provider": "black",
