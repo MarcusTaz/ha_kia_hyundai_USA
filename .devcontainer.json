@@ -1,9 +1,10 @@
 {
-	"name": "ludeeus/integration_blueprint",
-	"image": "mcr.microsoft.com/vscode/devcontainers/python:0-3.10-bullseye",
+	"name": "HA Kia/Hyundai/Genesis (USA) Dev",
+	"image": "ghcr.io/home-assistant/home-assistant:dev",
 	"postCreateCommand": "scripts/setup",
-	"forwardPorts": [
-		8123
+	"overrideCommand": true,
+	"appPort": [
+		"8123:8123"
 	],
 	"customizations": {
 		"vscode": {
@@ -16,7 +17,7 @@
 			"settings": {
 				"files.eol": "\n",
 				"editor.tabSize": 4,
-				"python.pythonPath": "/usr/bin/python3",
+				"python.defaultInterpreterPath": "/usr/local/bin/python",
 				"python.analysis.autoSearchPaths": false,
 				"python.linting.pylintEnabled": true,
 				"python.linting.enabled": true,
@@ -29,5 +30,17 @@
 			}
 		}
 	},
-	"remoteUser": "vscode"
+	"forwardPorts": [
+		8123
+	],
+	"portsAttributes": {
+		"8123": {
+			"label": "Home Assistant",
+			"onAutoForward": "notify"
+		}
+	},
+	"mounts": [
+		"source=${localWorkspaceFolder}/.devcontainer/config,target=/config,type=bind",
+		"source=${localWorkspaceFolder}/custom_components,target=/config/custom_components,type=bind"
+	]
 }
