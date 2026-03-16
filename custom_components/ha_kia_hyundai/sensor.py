@@ -13,6 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
     STATE_UNAVAILABLE,
+    UnitOfElectricPotential,
     UnitOfLength,
     UnitOfTemperature,
     UnitOfTime,
@@ -141,6 +142,24 @@ SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         preserve_state=True
+    ),
+    KiaSensorEntityDescription(
+        key="car_battery_voltage_estimate",
+        name="12v Battery Voltage (Est.)",
+        device_class=SensorDeviceClass.VOLTAGE,
+        icon="mdi:car-battery",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        preserve_state=True,
+    ),
+    KiaSensorEntityDescription(
+        key="car_battery_status",
+        name="12v Battery Status",
+        device_class=None,
+        icon="mdi:battery-heart-variant",
+        native_unit_of_measurement=None,
+        preserve_state=True,
     ),
 )
 

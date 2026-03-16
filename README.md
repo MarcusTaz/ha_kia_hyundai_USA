@@ -84,6 +84,8 @@ After authentication, the integration will display all vehicles found in your ac
 
 ### Sensors
 - Battery level (12V)
+- Battery voltage estimate (12V)
+- Battery status (12V) - Good/Fair/Low/Critical
 - EV battery level (if applicable)
 - Charging status
 - Plugged in status

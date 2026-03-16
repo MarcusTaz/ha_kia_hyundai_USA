@@ -216,6 +216,39 @@ class VehicleCoordinator(DataUpdateCoordinator):
         )
 
     @property
+    def car_battery_voltage_estimate(self) -> float | None:
+        """Return estimated 12V battery voltage based on SOC percentage.
+
+        Uses linear approximation: voltage = 11.8 + (SOC/100 * 0.9)
+        Range: 11.8V (0%) to 12.7V (100%)
+        """
+        soc = self.car_battery_level
+        if soc is None:
+            return None
+        return round(11.8 + (soc / 100 * 0.9), 1)
+
+    @property
+    def car_battery_status(self) -> str | None:
+        """Return 12V battery health status based on SOC percentage.
+
+        Status thresholds:
+        - 80-100%: Good
+        - 60-79%: Fair
+        - 40-59%: Low
+        - <40%: Critical
+        """
+        soc = self.car_battery_level
+        if soc is None:
+            return None
+        if soc >= 80:
+            return "Good"
+        if soc >= 60:
+            return "Fair"
+        if soc >= 40:
+            return "Low"
+        return "Critical"
+
+    @property
     def last_synced_to_cloud(self) -> datetime | None:
         """Return when vehicle last synced to cloud."""
         last_updated_str = safely_get_json_value(
