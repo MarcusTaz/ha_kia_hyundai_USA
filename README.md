@@ -205,6 +205,21 @@ This is a Kia API limitation. The vehicle uses your "Custom Climate" profile set
 
 **Workaround:** Set your preferred duration in the Kia Connect app's Custom Climate section. Home Assistant can then trigger climate start, and the vehicle will use your stored preferences.
 
+### 12V Battery Sensor
+
+The 12V battery sensor displays **State of Charge (SOC) as a percentage** - actual voltage is not provided by the Kia/Hyundai API.
+
+For reference, here's how the percentage roughly maps to voltage on a typical 12V automotive battery:
+
+| SOC % | Approx. Voltage | Status |
+|-------|-----------------|--------|
+| 100%  | ~12.7V          | Full   |
+| 80%   | ~12.4V          | Good   |
+| 60%   | ~12.2V          | Fair   |
+| 40%   | ~12.0V          | Low    |
+
+A reading of 80% indicates a healthy battery (~12.4V).
+
 ## Update Frequency
 
 - **Default polling**: Every 10 minutes (configurable in integration options)
