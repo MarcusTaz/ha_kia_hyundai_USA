@@ -729,21 +729,24 @@ class UsGenesis:
                     "rrSeatHeatState": _seat_settings_genesis(right_rear_seat, vehicle_id),
                 }
         else:
+            # ICE vehicle - Gen 2 uses simpler payload, Gen 3+ supports seat heaters
             data = {
                 "Ims": 0,
                 "airCtrl": int(climate),
-                "airTemp": {"unit": 1, "value": set_temp},
+                "airTemp": {"unit": 1, "value": str(set_temp)},
                 "defrost": defrost,
                 "heating1": int(heating),
-                "seatHeaterVentInfo": {
+            }
+            # Gen 3+ supports seat heaters and additional fields
+            if generation >= 3:
+                data["seatHeaterVentInfo"] = {
                     "drvSeatHeatState": _seat_settings_genesis(driver_seat, vehicle_id),
                     "astSeatHeatState": _seat_settings_genesis(passenger_seat, vehicle_id),
                     "rlSeatHeatState": _seat_settings_genesis(left_rear_seat, vehicle_id),
                     "rrSeatHeatState": _seat_settings_genesis(right_rear_seat, vehicle_id),
-                },
-                "username": self.username,
-                "vin": vehicle.get("vin"),
-            }
+                }
+                data["username"] = self.username
+                data["vin"] = vehicle.get("vin")
             # Only include duration if user specified it
             if duration is not None:
                 data["igniOnDuration"] = duration
