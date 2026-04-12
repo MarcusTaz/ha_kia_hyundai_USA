@@ -104,7 +104,16 @@ def _seat_settings_genesis(level: SeatSettings | None, vehicle_id: str = "") -> 
         6: 8,  # HeatHigh
     })
 
-    result = mapping.get(level_value, mapping.get(0, 2))
+    # Handle heat-only vehicles (4 entries: Off + 3 heat levels)
+    # SeatSettings enum: 4=HeatLow, 5=HeatMedium, 6=HeatHigh
+    # But 4-entry mapping has indices 0,1,2,3 not 0,4,5,6
+    # Remap heat levels 4/5/6 to indices 1/2/3
+    if len(mapping) == 4 and level_value in [4, 5, 6]:
+        remap = {4: 1, 5: 2, 6: 3}
+        result = mapping.get(remap[level_value], mapping.get(0, 2))
+    else:
+        result = mapping.get(level_value, mapping.get(0, 2))
+
     _LOGGER.debug("_seat_settings_genesis: output value=%s (from mapping: %s)", result, mapping)
     return result
 
