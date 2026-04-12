@@ -216,6 +216,7 @@ class UsGenesis:
         headers["registrationId"] = vehicle.get("regid", vehicle.get("id", ""))
         headers["gen"] = str(vehicle.get("generation", vehicle.get("gen", "2")))
         headers["vin"] = vehicle.get("vin", vehicle.get("VIN", ""))
+        headers["APPCLOUD-VIN"] = vehicle.get("vin", vehicle.get("VIN", ""))
         return headers
 
     def _is_token_valid(self) -> bool:
@@ -729,27 +730,24 @@ class UsGenesis:
                     "rrSeatHeatState": _seat_settings_genesis(right_rear_seat, vehicle_id),
                 }
         else:
-            # ICE vehicle - Gen 2 uses simpler payload, Gen 3+ supports seat heaters
+            # ICE vehicle - match bluelinky payload structure
+            # Always include igniOnDuration, seatHeaterVentInfo, username, vin
             data = {
                 "Ims": 0,
                 "airCtrl": int(climate),
                 "airTemp": {"unit": 1, "value": str(set_temp)},
                 "defrost": defrost,
                 "heating1": int(heating),
-            }
-            # Gen 3+ supports seat heaters and additional fields
-            if generation >= 3:
-                data["seatHeaterVentInfo"] = {
+                "igniOnDuration": duration if duration is not None else 10,
+                "seatHeaterVentInfo": {
                     "drvSeatHeatState": _seat_settings_genesis(driver_seat, vehicle_id),
                     "astSeatHeatState": _seat_settings_genesis(passenger_seat, vehicle_id),
                     "rlSeatHeatState": _seat_settings_genesis(left_rear_seat, vehicle_id),
                     "rrSeatHeatState": _seat_settings_genesis(right_rear_seat, vehicle_id),
-                }
-                data["username"] = self.username
-                data["vin"] = vehicle.get("vin")
-            # Only include duration if user specified it
-            if duration is not None:
-                data["igniOnDuration"] = duration
+                },
+                "username": self.username,
+                "vin": vehicle.get("vin"),
+            }
 
         _LOGGER.debug("Genesis start_climate data: %s", data)
 
