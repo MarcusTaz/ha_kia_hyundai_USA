@@ -85,7 +85,7 @@ After authentication, the integration will display all vehicles found in your ac
 ### Sensors
 - Battery level (12V)
 - Battery voltage estimate (12V)
-- Battery status (12V) - Good/Fair/Low/Critical
+- Battery status (12V) - Excellent/Good/Fair/Low/Critical
 - EV battery level (if applicable)
 - Charging status
 - Plugged in status
@@ -206,6 +206,22 @@ For Kia electric vehicles (EV6, EV9, etc.), the remote climate API has the follo
 This is a Kia API limitation. The vehicle uses your "Custom Climate" profile settings stored in the official Kia Connect app for duration. To change these values, update your Custom Climate settings in the Kia app launch climate and then stop.
 
 **Workaround:** Set your preferred duration in the Kia Connect app's Custom Climate section. Home Assistant can then trigger climate start, and the vehicle will use your stored preferences.
+
+### 12V Battery Sensor
+
+The 12V battery sensor displays **State of Charge (SOC) as a percentage** - actual voltage is not provided by the Kia/Hyundai API.
+
+For reference, here's how the percentage roughly maps to voltage on a typical 12V automotive battery:
+
+| SOC % | Approx. Voltage | Status |
+|-------|-----------------|--------|
+| 95-100% | ~12.6-12.7V | Excellent |
+| 80-94% | ~12.4-12.6V | Good |
+| 60-79% | ~12.2-12.4V | Fair |
+| 40-59% | ~12.0-12.2V | Low |
+| <40% | <12.0V | Critical |
+
+A reading of 95%+ indicates an excellent, fully charged battery.
 
 ## Update Frequency
 

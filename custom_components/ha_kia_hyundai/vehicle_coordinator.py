@@ -232,7 +232,8 @@ class VehicleCoordinator(DataUpdateCoordinator):
         """Return 12V battery health status based on SOC percentage.
 
         Status thresholds:
-        - 80-100%: Good
+        - 95-100%: Excellent
+        - 80-94%: Good
         - 60-79%: Fair
         - 40-59%: Low
         - <40%: Critical
@@ -240,6 +241,8 @@ class VehicleCoordinator(DataUpdateCoordinator):
         soc = self.car_battery_level
         if soc is None:
             return None
+        if soc >= 95:
+            return "Excellent"
         if soc >= 80:
             return "Good"
         if soc >= 60:
