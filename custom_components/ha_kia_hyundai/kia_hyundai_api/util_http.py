@@ -1,3 +1,4 @@
+import json
 import logging
 
 from functools import wraps
@@ -7,6 +8,39 @@ from .errors import AuthError, ActionAlreadyInProgressError, PINLockedError
 from .util import clean_dictionary_for_logging
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _is_empty_body(response_text: str | None) -> bool:
+    """Return true when the API returned no usable response body."""
+    return response_text is None or response_text.strip() == ""
+
+
+def _is_success_status(response: ClientResponse) -> bool:
+    """Return true for HTTP statuses the API uses for successful commands."""
+    return 200 <= response.status < 300
+
+
+def _is_zero_error_code(error_code) -> bool:
+    """Return true when BlueLink's errorCode represents success."""
+    return str(error_code) in ("0", "200")
+
+
+def _extract_bluelink_error_message(response_json: dict) -> str:
+    """Return the most useful BlueLink error message available."""
+    return response_json.get(
+        "errorMessage",
+        response_json.get("errorSubMessage", "Unknown error"),
+    )
+
+
+def _is_bluelink_auth_error(url: str, error_code) -> bool:
+    """Return true when a BlueLink response should trigger reauthentication."""
+    # Upstream USA handling maps oauth/token errorCode 502 to auth failure, but
+    # vehicle endpoints can also return 502 for backend HATA failures.
+    if str(error_code) == "502" and url.endswith("/oauth/token"):
+        return True
+    return str(error_code) in ("401", "403", "1003", "1005")
+
 
 def request_with_active_session(func):
     @wraps(func)
@@ -114,15 +148,45 @@ def request_with_logging_bluelink(func):
             f"response headers:{clean_dictionary_for_logging(response.headers)}"
         )
 
-        # Check content type before trying to parse JSON
+        response_text = await response.text()
+
+        # Upstream USA BlueLink behavior: control commands can return HTTP 200
+        # with an empty body. Treat that as success instead of trying to parse
+        # JSON and surfacing a JSONDecodeError.
+        if _is_empty_body(response_text):
+            if _is_success_status(response):
+                _LOGGER.debug(
+                    "BlueLink API returned empty body with HTTP %s for %s; "
+                    "treating command as successful",
+                    response.status,
+                    url,
+                )
+                return response
+
+            raise ClientError(
+                f"BlueLink API error: HTTP {response.status} with empty response"
+            )
+
+        if not _is_success_status(response):
+            _LOGGER.debug(
+                "BlueLink API returned HTTP %s for %s. First 500 chars: %s",
+                response.status,
+                url,
+                response_text[:500],
+            )
+
         content_type = response.headers.get("Content-Type", "")
         if "application/json" not in content_type:
-            response_text = await response.text()
             _LOGGER.warning(
                 f"API returned non-JSON response (Content-Type: {content_type}). "
                 f"First 500 chars: {response_text[:500]}"
             )
-            raise AuthError(f"API returned non-JSON response (Content-Type: {content_type})")
+            if response.status in (401, 403):
+                raise AuthError(f"API returned non-JSON auth response (HTTP {response.status})")
+            raise ClientError(
+                f"API returned non-JSON response (HTTP {response.status}, "
+                f"Content-Type: {content_type})"
+            )
 
         try:
             response_json = await response.json()
@@ -132,8 +196,8 @@ def request_with_logging_bluelink(func):
 
             # BlueLink API error handling - different format than Kia
             # Check for error responses
-            if "errorCode" in response_json and response_json.get("errorCode") != 0:
-                error_msg = response_json.get("errorMessage", response_json.get("errorSubMessage", "Unknown error"))
+            if "errorCode" in response_json and not _is_zero_error_code(response_json.get("errorCode")):
+                error_msg = _extract_bluelink_error_message(response_json)
                 error_code = response_json.get("errorCode")
                 _LOGGER.debug(f"BlueLink API error: {error_code} - {error_msg}")
 
@@ -144,18 +208,23 @@ def request_with_logging_bluelink(func):
                     raise PINLockedError(f"BlueLink PIN locked: {error_msg}")
 
                 # Auth errors
-                if error_code in [401, 403, 1003, 1005]:
+                if _is_bluelink_auth_error(url, error_code):
                     raise AuthError(f"BlueLink auth error: {error_msg}")
 
                 raise ClientError(f"BlueLink API error: {error_msg}")
+
+            if not _is_success_status(response):
+                raise ClientError(f"BlueLink API error: HTTP {response.status}")
 
             # Success - return response
             return response
 
         except ContentTypeError as e:
-            response_text = await response.text()
             _LOGGER.warning(f"ContentTypeError parsing response: {e}. Text: {response_text[:500]}")
             raise AuthError(f"API returned invalid response: {e}")
+        except json.JSONDecodeError as e:
+            _LOGGER.warning(f"JSONDecodeError parsing response: {e}. Text: {response_text[:500]}")
+            raise ClientError(f"BlueLink API returned invalid JSON: {e}")
         except (AuthError, ClientError):
             raise
         except Exception as e:
