@@ -7,6 +7,15 @@
 
 A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered in the United States**. This is a community-maintained fork with active development.
 
+## Latest Update
+
+### v3.2.1 - USA BlueLink API Updates
+
+- Updated Hyundai/Genesis USA API handling to match recent upstream changes.
+- Fixed successful empty command responses being reported as errors.
+- Added Hyundai/Genesis command transaction tracking and action status polling.
+- Updated Hyundai ICE remote climate payloads for current API expectations.
+
 ## Requirements
 
 - **USA Only** - Vehicles must be registered in the United States
