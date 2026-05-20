@@ -291,7 +291,7 @@ class UsGenesis:
     async def _post_request_with_logging_and_errors_raised(
             self,
             url: str,
-            json_body: dict,
+            json_body: dict | None = None,
             headers: dict | None = None,
     ) -> ClientResponse:
         if headers is None:
@@ -302,6 +302,28 @@ class UsGenesis:
             headers=headers,
             ssl=await self.get_ssl_context()
         )
+
+    def _get_transaction_id(self, response: ClientResponse) -> str | None:
+        """Return the BlueLink transaction ID from a command response."""
+        for key in ("tmsTid", "transactionId", "Xid"):
+            if key in response.headers:
+                return response.headers[key]
+        _LOGGER.warning(
+            "Genesis command response did not include a transaction ID: %s",
+            dict(response.headers),
+        )
+        return None
+
+    def _set_last_action_from_response(self, name: str, response: ClientResponse) -> None:
+        """Track command transaction ID so refresh can wait for completion."""
+        transaction_id = self._get_transaction_id(response)
+        if transaction_id is None:
+            self.last_action = None
+            return
+        self.last_action = {
+            "name": name,
+            "id": transaction_id,
+        }
 
     @request_with_logging_bluelink
     async def _get_request_with_logging_and_errors_raised(
@@ -667,6 +689,7 @@ class UsGenesis:
             headers=headers,
         )
         _LOGGER.debug("Genesis lock response: %s", await response.text())
+        self._set_last_action_from_response("lock", response)
 
     async def unlock(self, vehicle_id: str):
         """Unlock the vehicle."""
@@ -687,6 +710,7 @@ class UsGenesis:
             headers=headers,
         )
         _LOGGER.debug("Genesis unlock response: %s", await response.text())
+        self._set_last_action_from_response("unlock", response)
 
     async def start_climate(
             self,
@@ -766,6 +790,7 @@ class UsGenesis:
             headers=headers,
         )
         _LOGGER.debug("Genesis start_climate response: %s", await response.text())
+        self._set_last_action_from_response("start_climate", response)
 
     async def stop_climate(self, vehicle_id: str):
         """Stop climate control."""
@@ -787,6 +812,7 @@ class UsGenesis:
             headers=headers,
         )
         _LOGGER.debug("Genesis stop_climate response: %s", await response.text())
+        self._set_last_action_from_response("stop_climate", response)
 
     async def start_charge(self, vehicle_id: str):
         """Start charging (EV only)."""
@@ -806,6 +832,7 @@ class UsGenesis:
             headers=headers,
         )
         _LOGGER.debug("Genesis start_charge response: %s", await response.text())
+        self._set_last_action_from_response("start_charge", response)
 
     async def stop_charge(self, vehicle_id: str):
         """Stop charging (EV only)."""
@@ -825,6 +852,7 @@ class UsGenesis:
             headers=headers,
         )
         _LOGGER.debug("Genesis stop_charge response: %s", await response.text())
+        self._set_last_action_from_response("stop_charge", response)
 
     async def set_charge_limits(
             self,
@@ -856,7 +884,53 @@ class UsGenesis:
             headers=headers,
         )
         _LOGGER.debug("Genesis set_charge_limits response: %s", await response.text())
+        self._set_last_action_from_response("set_charge_limits", response)
 
     async def check_last_action_finished(self, vehicle_id: str) -> bool:
-        """Check if last action is finished (placeholder for compatibility)."""
+        """Check whether the last tracked Genesis command has completed."""
+        if self.last_action is None:
+            return True
+
+        action_id = self.last_action.get("id")
+        if not action_id:
+            self.last_action = None
+            return True
+
+        await self._ensure_token_valid()
+        vehicle = await self.find_vehicle(vehicle_id)
+        headers = self._get_vehicle_headers(vehicle)
+        headers["tid"] = action_id
+        headers["login_id"] = self.username
+        headers["service_type"] = "REMOTE_POLL"
+
+        url = GENESIS_API_URL_BASE + "rmt/getRunningStatus"
+        try:
+            response = await self._post_request_with_logging_and_errors_raised(
+                url=url,
+                headers=headers,
+            )
+        except Exception as err:
+            _LOGGER.debug(
+                "Genesis action status check failed for %s; clearing tracked action: %s",
+                self.last_action.get("name"),
+                err,
+            )
+            self.last_action = None
+            return True
+        try:
+            response_json = await response.json()
+        except Exception:
+            _LOGGER.debug(
+                "Genesis action status returned no JSON for %s; clearing tracked action",
+                self.last_action.get("name"),
+            )
+            self.last_action = None
+            return True
+
+        status = str(response_json.get("status", "")).upper()
+        _LOGGER.debug("Genesis action status for %s: %s", action_id, status)
+        if status == "PENDING":
+            return False
+
+        self.last_action = None
         return True

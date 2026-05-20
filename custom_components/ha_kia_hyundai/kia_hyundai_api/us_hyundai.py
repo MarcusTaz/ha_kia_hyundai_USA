@@ -303,7 +303,7 @@ class UsHyundai:
     async def _post_request_with_logging_and_errors_raised(
             self,
             url: str,
-            json_body: dict,
+            json_body: dict | None = None,
             headers: dict | None = None,
     ) -> ClientResponse:
         if headers is None:
@@ -328,6 +328,28 @@ class UsHyundai:
             headers=headers,
             ssl=await self.get_ssl_context()
         )
+
+    def _get_transaction_id(self, response: ClientResponse) -> str | None:
+        """Return the BlueLink transaction ID from a command response."""
+        for key in ("tmsTid", "transactionId", "Xid"):
+            if key in response.headers:
+                return response.headers[key]
+        _LOGGER.warning(
+            "Hyundai command response did not include a transaction ID: %s",
+            dict(response.headers),
+        )
+        return None
+
+    def _set_last_action_from_response(self, name: str, response: ClientResponse) -> None:
+        """Track command transaction ID so refresh can wait for completion."""
+        transaction_id = self._get_transaction_id(response)
+        if transaction_id is None:
+            self.last_action = None
+            return
+        self.last_action = {
+            "name": name,
+            "id": transaction_id,
+        }
 
     async def login(self):
         """Login to Hyundai BlueLink with username/password (PIN used for commands)."""
@@ -687,6 +709,7 @@ class UsHyundai:
             headers=headers,
         )
         _LOGGER.debug("Hyundai lock response: %s", await response.text())
+        self._set_last_action_from_response("lock", response)
 
     async def unlock(self, vehicle_id: str):
         """Unlock the vehicle."""
@@ -707,6 +730,7 @@ class UsHyundai:
             headers=headers,
         )
         _LOGGER.debug("Hyundai unlock response: %s", await response.text())
+        self._set_last_action_from_response("unlock", response)
 
     async def start_climate(
             self,
@@ -773,6 +797,7 @@ class UsHyundai:
                 "airTemp": {"unit": 1, "value": set_temp},
                 "defrost": defrost,
                 "heating1": heating1_value,
+                "igniOnDuration": duration if duration is not None else 10,
                 "seatHeaterVentInfo": {
                     "drvSeatHeatState": _seat_settings_hyundai(driver_seat, vehicle_id),
                     "astSeatHeatState": _seat_settings_hyundai(passenger_seat, vehicle_id),
@@ -782,9 +807,6 @@ class UsHyundai:
                 "username": self.username,
                 "vin": vehicle.get("vin"),
             }
-            # Only include duration if user specified it
-            if duration is not None:
-                data["igniOnDuration"] = duration
 
         _LOGGER.debug("Hyundai start_climate data: %s", data)
 
@@ -794,6 +816,7 @@ class UsHyundai:
             headers=headers,
         )
         _LOGGER.debug("Hyundai start_climate response: %s", await response.text())
+        self._set_last_action_from_response("start_climate", response)
 
     async def stop_climate(self, vehicle_id: str):
         """Stop climate control."""
@@ -815,6 +838,7 @@ class UsHyundai:
             headers=headers,
         )
         _LOGGER.debug("Hyundai stop_climate response: %s", await response.text())
+        self._set_last_action_from_response("stop_climate", response)
 
     async def start_charge(self, vehicle_id: str):
         """Start charging (EV only)."""
@@ -834,6 +858,7 @@ class UsHyundai:
             headers=headers,
         )
         _LOGGER.debug("Hyundai start_charge response: %s", await response.text())
+        self._set_last_action_from_response("start_charge", response)
 
     async def stop_charge(self, vehicle_id: str):
         """Stop charging (EV only)."""
@@ -853,6 +878,7 @@ class UsHyundai:
             headers=headers,
         )
         _LOGGER.debug("Hyundai stop_charge response: %s", await response.text())
+        self._set_last_action_from_response("stop_charge", response)
 
     async def set_charge_limits(
             self,
@@ -884,8 +910,53 @@ class UsHyundai:
             headers=headers,
         )
         _LOGGER.debug("Hyundai set_charge_limits response: %s", await response.text())
+        self._set_last_action_from_response("set_charge_limits", response)
 
     async def check_last_action_finished(self, vehicle_id: str) -> bool:
-        """Check if last action is finished (placeholder for compatibility)."""
-        # Hyundai API doesn't have the same action tracking as Kia
+        """Check whether the last tracked Hyundai command has completed."""
+        if self.last_action is None:
+            return True
+
+        action_id = self.last_action.get("id")
+        if not action_id:
+            self.last_action = None
+            return True
+
+        await self._ensure_token_valid()
+        vehicle = await self.find_vehicle(vehicle_id)
+        headers = self._get_vehicle_headers(vehicle)
+        headers["tid"] = action_id
+        headers["login_id"] = self.username
+        headers["service_type"] = "REMOTE_POLL"
+
+        url = HYUNDAI_API_URL_BASE + "rmt/getRunningStatus"
+        try:
+            response = await self._post_request_with_logging_and_errors_raised(
+                url=url,
+                headers=headers,
+            )
+        except Exception as err:
+            _LOGGER.debug(
+                "Hyundai action status check failed for %s; clearing tracked action: %s",
+                self.last_action.get("name"),
+                err,
+            )
+            self.last_action = None
+            return True
+        try:
+            response_json = await response.json()
+        except Exception:
+            _LOGGER.debug(
+                "Hyundai action status returned no JSON for %s; clearing tracked action",
+                self.last_action.get("name"),
+            )
+            self.last_action = None
+            return True
+
+        status = str(response_json.get("status", "")).upper()
+        _LOGGER.debug("Hyundai action status for %s: %s", action_id, status)
+        if status == "PENDING":
+            return False
+
+        self.last_action = None
         return True
