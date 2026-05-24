@@ -114,7 +114,7 @@ SENSOR_DESCRIPTIONS: Final[tuple[KiaSensorEntityDescription, ...]] = (
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         preserve_state=True,
-        exists_fn=lambda c: not c.is_ev,  # Only show for ICE/hybrid vehicles
+        exists_fn=lambda c: (not c.is_ev) or c.is_phev,  # Show for ICE and PHEV
     ),
     KiaSensorEntityDescription(
         key="fuel_remaining_range_value",

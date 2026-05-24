@@ -576,6 +576,7 @@ class UsHyundai:
         transformed = {
             "vinKey": vehicle.get("vin"),
             "vehicleConfig": {
+                "engineType": vehicle.get("evStatus", "N"),
                 "vehicleDetail": {
                     "vehicle": {
                         "vin": vehicle.get("vin"),
@@ -654,8 +655,8 @@ class UsHyundai:
             },
         }
 
-        # Add EV-specific data if applicable
-        if vehicle.get("evStatus") == "E":
+        # Add EV-specific data if applicable (EV "E" or PHEV "P")
+        if vehicle.get("evStatus") in ("E", "P") and vehicle_status.get("evStatus"):
             ev_status = vehicle_status.get("evStatus", {})
             transformed["lastVehicleInfo"]["vehicleStatusRpt"]["vehicleStatus"]["evStatus"] = {
                 "batteryCharge": ev_status.get("batteryCharge", False),
