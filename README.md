@@ -7,6 +7,14 @@
 
 A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered in the United States**. This is a community-maintained fork with active development.
 
+## Latest Update
+
+### v3.3.1 - Seat Status API Safety
+
+- Updated seat heat/vent status handling to match the latest upstream API safety fix.
+- Unknown seat status codes now show as unavailable instead of causing entity update failures.
+- Reviewed `kia_uvo` v3.1.0 / `hyundai_kia_connect_api` v4.14.1 and skipped non-USA window-option changes that this integration does not expose.
+
 ## Requirements
 
 - **USA Only** - Vehicles must be registered in the United States

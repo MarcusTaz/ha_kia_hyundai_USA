@@ -252,9 +252,9 @@ class SeatSensor(VehicleCoordinatorBaseEntity, SensorEntity):
     """Class for seat sensors."""
 
     @property
-    def native_value(self) -> str:
+    def native_value(self) -> str | None:
         """Return the state of the seat."""
-        return SEAT_STATUS[getattr(self.coordinator, self.entity_description.key)]
+        return SEAT_STATUS.get(getattr(self.coordinator, self.entity_description.key))
 
     @property
     def available(self) -> bool:
@@ -264,9 +264,12 @@ class SeatSensor(VehicleCoordinatorBaseEntity, SensorEntity):
     @property
     def icon(self) -> str:
         """Return an icon based on the seat state."""
-        if "Heat" in self.native_value:
+        native_value = self.native_value
+        if native_value is None:
+            return "mdi:car-seat"
+        if "Heat" in native_value:
             return "mdi:car-seat-heater"
-        if "Cool" in self.native_value:
+        if "Cool" in native_value:
             return "mdi:car-seat-cooler"
         return "mdi:car-seat"
 
