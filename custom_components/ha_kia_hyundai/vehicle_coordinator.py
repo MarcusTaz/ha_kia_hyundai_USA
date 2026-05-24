@@ -189,6 +189,14 @@ class VehicleCoordinator(DataUpdateCoordinator):
         return ev_status is not None
 
     @property
+    def is_phev(self) -> bool:
+        """Return True if this is a plug-in hybrid (has both EV battery and fuel)."""
+        return safely_get_json_value(
+            self.data,
+            "vehicleConfig.engineType"
+        ) == "P"
+
+    @property
     def ev_battery_level(self) -> int | None:
         """Return EV battery percentage."""
         return safely_get_json_value(
