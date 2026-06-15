@@ -20,7 +20,7 @@ import time
 from functools import partial
 from aiohttp import ClientSession, ClientResponse
 
-from .errors import AuthError, PINLockedError
+from .errors import AuthError, HATARemoteVehicleStatusError, PINLockedError
 from .const import (
     GENESIS_API_URL_HOST,
     GENESIS_LOGIN_API_BASE,
@@ -157,6 +157,7 @@ class UsGenesis:
         self.pin = pin
         self.device_id = device_id or str(uuid.uuid4()).upper()
         self.token_expires_at = None
+        self._hata_force_refresh_attempted: set[str] = set()
         if client_session is None:
             self.api_session = ClientSession(raise_for_status=False)
         else:
@@ -461,10 +462,25 @@ class UsGenesis:
         headers = self._get_vehicle_headers(vehicle)
 
         url = GENESIS_API_URL_BASE + "rcs/rvs/vehicleStatus"
-        response = await self._get_request_with_logging_and_errors_raised(
-            url=url,
-            headers=headers,
-        )
+        try:
+            response = await self._get_request_with_logging_and_errors_raised(
+                url=url,
+                headers=headers,
+            )
+        except HATARemoteVehicleStatusError as err:
+            if vehicle_id in self._hata_force_refresh_attempted:
+                raise
+            self._hata_force_refresh_attempted.add(vehicle_id)
+            _LOGGER.warning(
+                "Genesis cached vehicle status failed; retrying once with force refresh: %s",
+                err,
+            )
+            force_headers = dict(headers)
+            force_headers["REFRESH"] = "true"
+            response = await self._get_request_with_logging_and_errors_raised(
+                url=url,
+                headers=force_headers,
+            )
         response_json = await response.json()
         _LOGGER.debug("Genesis vehicle status response: %s", response_json)
 

@@ -4,7 +4,12 @@ import logging
 from functools import wraps
 from aiohttp import ClientError, ClientResponse, ContentTypeError
 
-from .errors import AuthError, ActionAlreadyInProgressError, PINLockedError
+from .errors import (
+    AuthError,
+    ActionAlreadyInProgressError,
+    HATARemoteVehicleStatusError,
+    PINLockedError,
+)
 from .util import clean_dictionary_for_logging
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,6 +45,15 @@ def _is_bluelink_auth_error(url: str, error_code) -> bool:
     if str(error_code) == "502" and url.endswith("/oauth/token"):
         return True
     return str(error_code) in ("401", "403", "1003", "1005")
+
+
+def _is_hata_remote_vehicle_status_error(response_json: dict) -> bool:
+    """Return true for the USA Genesis HATA remoteVehicleStatus 502 failure."""
+    return (
+        str(response_json.get("errorCode")) == "502"
+        and response_json.get("systemName") == "HATA"
+        and response_json.get("functionName") == "remoteVehicleStatus"
+    )
 
 
 def request_with_active_session(func):
@@ -200,6 +214,9 @@ def request_with_logging_bluelink(func):
                 error_msg = _extract_bluelink_error_message(response_json)
                 error_code = response_json.get("errorCode")
                 _LOGGER.debug(f"BlueLink API error: {error_code} - {error_msg}")
+
+                if _is_hata_remote_vehicle_status_error(response_json):
+                    raise HATARemoteVehicleStatusError(f"BlueLink API error: {error_msg}")
 
                 # Check for PIN locked error - this is critical to detect
                 error_msg_upper = error_msg.upper() if error_msg else ""
