@@ -9,11 +9,11 @@ A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered
 
 ## Latest Update
 
-### v3.3.1 - Seat Status API Safety
+### v3.3.2 - Genesis GV60 Status Fallback
 
-- Updated seat heat/vent status handling to match the latest upstream API safety fix.
-- Unknown seat status codes now show as unavailable instead of causing entity update failures.
-- Reviewed `kia_uvo` v3.1.0 / `hyundai_kia_connect_api` v4.14.1 and skipped non-USA window-option changes that this integration does not expose.
+- Added a narrow Genesis fallback for HATA `remoteVehicleStatus` 502 errors.
+- If cached Genesis vehicle status fails, the integration retries once with force refresh.
+- This targets GV60 setup failures without forcing refresh on every normal poll.
 
 ## Requirements
 

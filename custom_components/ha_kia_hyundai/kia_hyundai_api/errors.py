@@ -32,3 +32,8 @@ class PINLockedError(AuthError):
 class TokenExpiredError(AuthError):
     """Raised when the access token has expired and needs refresh."""
     pass
+
+
+class HATARemoteVehicleStatusError(BaseError):
+    """Raised when HATA fails the BlueLink remoteVehicleStatus backend call."""
+    pass
