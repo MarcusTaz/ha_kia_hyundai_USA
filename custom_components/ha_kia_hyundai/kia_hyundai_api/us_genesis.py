@@ -554,13 +554,19 @@ class UsGenesis:
             fatc_available, bluelink_enabled
         )
 
-        # Get location
+        vehicle_status = response_json.get("vehicleStatus", {})
+
+        # Get location; GV60 may expose coordinates in vehicleStatus while findMyCar times out.
         location = None
         try:
             loc_url = GENESIS_API_URL_BASE + "rcs/rfc/findMyCar"
-            loc_response = await self._get_request_with_logging_and_errors_raised(
-                url=loc_url,
-                headers=headers,
+            _LOGGER.debug("Genesis findMyCar URL: %s", loc_url)
+            loc_response = await asyncio.wait_for(
+                self._get_request_with_logging_and_errors_raised(
+                    url=loc_url,
+                    headers=headers,
+                ),
+                timeout=10,
             )
             loc_json = await loc_response.json()
             if loc_json.get("coord"):
@@ -568,9 +574,13 @@ class UsGenesis:
         except Exception as e:
             _LOGGER.debug("Failed to get location: %s", e)
 
-        # Transform to match Kia format
-        vehicle_status = response_json.get("vehicleStatus", {})
+        if location is None:
+            status_location = vehicle_status.get("vehicleLocation") or {}
+            if status_location.get("coord"):
+                _LOGGER.debug("Using Genesis vehicleStatus location fallback")
+                location = status_location
 
+        # Transform to match Kia format
         transformed = {
             "vinKey": vehicle.get("vin"),
             "vehicleConfig": {

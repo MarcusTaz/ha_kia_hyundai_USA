@@ -1,7 +1,7 @@
 from logging import getLogger
 
-from homeassistant.components.device_tracker import SourceType, TrackerEntityDescription
-from homeassistant.components.device_tracker.config_entry import TrackerEntity
+from homeassistant.components.device_tracker import TrackerEntity, TrackerEntityDescription
+from homeassistant.components.device_tracker.const import SourceType
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
