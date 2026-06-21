@@ -158,6 +158,7 @@ class UsGenesis:
         self.device_id = device_id or str(uuid.uuid4()).upper()
         self.token_expires_at = None
         self._hata_force_refresh_attempted: set[str] = set()
+        self._enrollment_details_cache: dict | None = None
         if client_session is None:
             self.api_session = ClientSession(raise_for_status=False)
         else:
@@ -412,15 +413,7 @@ class UsGenesis:
         """Get list of vehicles for the account."""
         await self._ensure_token_valid()
 
-        url = GENESIS_API_URL_BASE + "enrollment/details/" + self.username
-        headers = self._get_authenticated_headers()
-
-        response = await self._get_request_with_logging_and_errors_raised(
-            url=url,
-            headers=headers,
-        )
-
-        response_json = await response.json()
+        response_json = await self._get_enrollment_details(force_refresh=True)
         _LOGGER.debug("Genesis get_vehicles response: %s", response_json)
 
         self.vehicles = []
@@ -454,6 +447,19 @@ class UsGenesis:
                 return vehicle
         raise ValueError(f"Vehicle {vehicle_id} not found")
 
+    async def _get_enrollment_details(self, force_refresh: bool = False) -> dict:
+        """Return cached Genesis enrollment metadata."""
+        if self._enrollment_details_cache is not None and not force_refresh:
+            return self._enrollment_details_cache
+
+        url = GENESIS_API_URL_BASE + "enrollment/details/" + self.username
+        response = await self._get_request_with_logging_and_errors_raised(
+            url=url,
+            headers=self._get_authenticated_headers(),
+        )
+        self._enrollment_details_cache = await response.json()
+        return self._enrollment_details_cache
+
     async def get_cached_vehicle_status(self, vehicle_id: str):
         """Get cached vehicle status from Genesis API."""
         await self._ensure_token_valid()
@@ -484,13 +490,8 @@ class UsGenesis:
         response_json = await response.json()
         _LOGGER.debug("Genesis vehicle status response: %s", response_json)
 
-        # Get vehicle details
-        details_url = GENESIS_API_URL_BASE + "enrollment/details/" + self.username
-        details_response = await self._get_request_with_logging_and_errors_raised(
-            url=details_url,
-            headers=self._get_authenticated_headers(),
-        )
-        details_json = await details_response.json()
+        # Enrollment details are metadata/capabilities; avoid polling this endpoint every refresh.
+        details_json = await self._get_enrollment_details()
 
         vehicle_details = {}
         seat_configs = []
@@ -553,13 +554,19 @@ class UsGenesis:
             fatc_available, bluelink_enabled
         )
 
-        # Get location
+        vehicle_status = response_json.get("vehicleStatus", {})
+
+        # Get location; GV60 may expose coordinates in vehicleStatus while findMyCar times out.
         location = None
         try:
             loc_url = GENESIS_API_URL_BASE + "rcs/rfc/findMyCar"
-            loc_response = await self._get_request_with_logging_and_errors_raised(
-                url=loc_url,
-                headers=headers,
+            _LOGGER.debug("Genesis findMyCar URL: %s", loc_url)
+            loc_response = await asyncio.wait_for(
+                self._get_request_with_logging_and_errors_raised(
+                    url=loc_url,
+                    headers=headers,
+                ),
+                timeout=10,
             )
             loc_json = await loc_response.json()
             if loc_json.get("coord"):
@@ -567,9 +574,13 @@ class UsGenesis:
         except Exception as e:
             _LOGGER.debug("Failed to get location: %s", e)
 
-        # Transform to match Kia format
-        vehicle_status = response_json.get("vehicleStatus", {})
+        if location is None:
+            status_location = vehicle_status.get("vehicleLocation") or {}
+            if status_location.get("coord"):
+                _LOGGER.debug("Using Genesis vehicleStatus location fallback")
+                location = status_location
 
+        # Transform to match Kia format
         transformed = {
             "vinKey": vehicle.get("vin"),
             "vehicleConfig": {

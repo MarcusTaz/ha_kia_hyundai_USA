@@ -9,11 +9,12 @@ A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered
 
 ## Latest Update
 
-### v3.3.2 - Genesis GV60 Status Fallback
+### v3.3.3 - Genesis GV60 Fixes
 
-- Added a narrow Genesis fallback for HATA `remoteVehicleStatus` 502 errors.
-- If cached Genesis vehicle status fails, the integration retries once with force refresh.
-- This targets GV60 setup failures without forcing refresh on every normal poll.
+- Promotes tested Genesis/GV60 fixes from beta to stable.
+- Caches Genesis enrollment metadata after the first successful read.
+- Avoids polling that metadata endpoint on every normal status refresh.
+- Falls back to location coordinates from vehicle status if `findMyCar` times out.
 
 ## Requirements
 
