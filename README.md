@@ -9,12 +9,12 @@ A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered
 
 ## Latest Update
 
-### v3.3.3 - Genesis GV60 Fixes
+### v3.3.4-beta.1 - Hyundai Force Update Status Test
 
-- Promotes tested Genesis/GV60 fixes from beta to stable.
-- Caches Genesis enrollment metadata after the first successful read.
-- Avoids polling that metadata endpoint on every normal status refresh.
-- Falls back to location coordinates from vehicle status if `findMyCar` times out.
+- Beta test for Hyundai vehicles where Force Update still returns stale status.
+- Reuses the `REFRESH: true` vehicle status response on the next refresh.
+- Caches Hyundai enrollment metadata instead of polling it every cycle.
+- Ports the upstream USA action-status polling change from POST to GET.
 
 ## Requirements
 
