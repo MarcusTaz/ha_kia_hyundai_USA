@@ -170,6 +170,8 @@ class UsHyundai:
         self.pin = pin
         self.device_id = device_id or str(uuid.uuid4()).upper()
         self.token_expires_at = None
+        self._enrollment_details_cache: dict | None = None
+        self._forced_vehicle_status_cache: dict[str, dict] = {}
         if client_session is None:
             self.api_session = ClientSession(raise_for_status=False)
         else:
@@ -423,15 +425,7 @@ class UsHyundai:
         """Get list of vehicles for the account."""
         await self._ensure_token_valid()
 
-        url = HYUNDAI_API_URL_BASE + "enrollment/details/" + self.username
-        headers = self._get_authenticated_headers()
-
-        response = await self._get_request_with_logging_and_errors_raised(
-            url=url,
-            headers=headers,
-        )
-
-        response_json = await response.json()
+        response_json = await self._get_enrollment_details(force_refresh=True)
         _LOGGER.debug("Hyundai get_vehicles response: %s", response_json)
 
         self.vehicles = []
@@ -465,6 +459,19 @@ class UsHyundai:
                 return vehicle
         raise ValueError(f"Vehicle {vehicle_id} not found")
 
+    async def _get_enrollment_details(self, force_refresh: bool = False) -> dict:
+        """Return cached Hyundai enrollment metadata."""
+        if self._enrollment_details_cache is not None and not force_refresh:
+            return self._enrollment_details_cache
+
+        url = HYUNDAI_API_URL_BASE + "enrollment/details/" + self.username
+        response = await self._get_request_with_logging_and_errors_raised(
+            url=url,
+            headers=self._get_authenticated_headers(),
+        )
+        self._enrollment_details_cache = await response.json()
+        return self._enrollment_details_cache
+
     async def get_cached_vehicle_status(self, vehicle_id: str):
         """Get cached vehicle status from Hyundai API.
 
@@ -476,22 +483,21 @@ class UsHyundai:
         vehicle = await self.find_vehicle(vehicle_id)
         headers = self._get_vehicle_headers(vehicle)
 
-        # Get vehicle status
+        # Use a force-update response once if the user just pressed Request Wake Up.
         url = HYUNDAI_API_URL_BASE + "rcs/rvs/vehicleStatus"
-        response = await self._get_request_with_logging_and_errors_raised(
-            url=url,
-            headers=headers,
-        )
-        response_json = await response.json()
+        response_json = self._forced_vehicle_status_cache.pop(vehicle_id, None)
+        if response_json is None:
+            response = await self._get_request_with_logging_and_errors_raised(
+                url=url,
+                headers=headers,
+            )
+            response_json = await response.json()
+        else:
+            _LOGGER.debug("Using stored Hyundai force-update vehicle status response")
         _LOGGER.debug("Hyundai vehicle status response: %s", response_json)
 
-        # Get vehicle details for additional info
-        details_url = HYUNDAI_API_URL_BASE + "enrollment/details/" + self.username
-        details_response = await self._get_request_with_logging_and_errors_raised(
-            url=details_url,
-            headers=self._get_authenticated_headers(),
-        )
-        details_json = await details_response.json()
+        # Enrollment details are metadata/capabilities; avoid polling this endpoint every refresh.
+        details_json = await self._get_enrollment_details()
 
         # Find this vehicle's details
         vehicle_details = {}
@@ -686,10 +692,11 @@ class UsHyundai:
         headers["REFRESH"] = "true"
 
         url = HYUNDAI_API_URL_BASE + "rcs/rvs/vehicleStatus"
-        await self._get_request_with_logging_and_errors_raised(
+        response = await self._get_request_with_logging_and_errors_raised(
             url=url,
             headers=headers,
         )
+        self._forced_vehicle_status_cache[vehicle_id] = await response.json()
 
     async def lock(self, vehicle_id: str):
         """Lock the vehicle."""
@@ -932,7 +939,7 @@ class UsHyundai:
 
         url = HYUNDAI_API_URL_BASE + "rmt/getRunningStatus"
         try:
-            response = await self._post_request_with_logging_and_errors_raised(
+            response = await self._get_request_with_logging_and_errors_raised(
                 url=url,
                 headers=headers,
             )
