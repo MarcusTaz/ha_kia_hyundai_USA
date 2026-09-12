@@ -557,7 +557,7 @@ class UsHyundai:
 
         # Transform Hyundai response to match Kia format for compatibility
         vehicle_status = response_json.get("vehicleStatus", {})
-        
+
         # Build a response structure that matches what our coordinator expects
         transformed = {
             "vinKey": vehicle.get("vin"),
