@@ -555,23 +555,9 @@ class UsHyundai:
             fatc_available, bluelink_enabled
         )
 
-        # Get location
-        location = None
-        try:
-            loc_url = HYUNDAI_API_URL_BASE + "rcs/rfc/findMyCar"
-            loc_response = await self._get_request_with_logging_and_errors_raised(
-                url=loc_url,
-                headers=headers,
-            )
-            loc_json = await loc_response.json()
-            if loc_json.get("coord"):
-                location = loc_json
-        except Exception as e:
-            _LOGGER.debug("Failed to get location: %s", e)
-
         # Transform Hyundai response to match Kia format for compatibility
         vehicle_status = response_json.get("vehicleStatus", {})
-
+        
         # Build a response structure that matches what our coordinator expects
         transformed = {
             "vinKey": vehicle.get("vin"),
@@ -668,7 +654,8 @@ class UsHyundai:
             }
 
         # Add location if available
-        if location:
+        location = vehicle_status.get("vehicleLocation")
+        if location and location.get("coord"):
             transformed["lastVehicleInfo"]["location"] = {
                 "coord": location.get("coord", {}),
                 "head": location.get("head", 0),
