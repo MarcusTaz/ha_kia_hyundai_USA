@@ -9,12 +9,10 @@ A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered
 
 ## Latest Update
 
-### v3.3.3 - Genesis GV60 Fixes
+### v3.3.4 - Hyundai Location Fix
 
-- Promotes tested Genesis/GV60 fixes from beta to stable.
-- Caches Genesis enrollment metadata after the first successful read.
-- Avoids polling that metadata endpoint on every normal status refresh.
-- Falls back to location coordinates from vehicle status if `findMyCar` times out.
+- Stops the separate Hyundai `findMyCar` request, which Hyundai rate-limits heavily and which broke location for Hyundai owners.
+- Reads location from `vehicleStatus.vehicleLocation` in the normal vehicle status response.
 
 ## Requirements
 
