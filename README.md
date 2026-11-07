@@ -9,11 +9,11 @@ A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered
 
 ## Latest Update
 
-### v3.3.4 - Hyundai Location Fix
+### v3.3.5 - Home Assistant 2026.11
 
-- Stops calling Hyundai's rate-limited `rcs/rfc/findMyCar` endpoint on every status refresh.
-- Reads location from `vehicleStatus.vehicleLocation` in the normal status response.
-- Restores vehicle location for Hyundai owners when that separate call was blocked.
+- Updates climate to the current temperature names so Home Assistant 2026.11 no longer warns about them.
+- Removes the unused cloud-polling connection class. The integration still polls the cloud.
+- Requires Home Assistant 2026.11.0 or newer. HACS hides this update from older installations.
 
 ## Requirements
 
