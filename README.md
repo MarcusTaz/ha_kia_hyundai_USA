@@ -19,7 +19,7 @@ A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered
 
 - **USA Only** - Vehicles must be registered in the United States
 - **Active Subscription** - Kia Connect, Hyundai Blue Link, or Genesis Connected Services
-- **Home Assistant** - Version 2023.1.0 or newer
+- **Home Assistant** - Version 2026.11.0 or newer
 - **HACS** - For easy installation (recommended)
 
 ## Features
