@@ -4,7 +4,7 @@
 - **GitHub:** https://github.com/MarcusTaz/ha_kia_hyundai_USA
 - **Current Version:** v3.1.3
 - **Domain:** `ha_kia_hyundai`
-- **Home Assistant Min Version:** 2023.1.0
+- **Home Assistant Min Version:** 2026.11.0
 
 ## Current Status
 - **Kia:** Fully working (OTP authentication)
@@ -24,7 +24,7 @@
   "name": "Kia/Hyundai/Genesis (USA)",
   "content_in_root": false,
   "render_readme": true,
-  "homeassistant": "2023.1.0",
+  "homeassistant": "2026.11.0",
   "country": ["US"]
 }
 ```
