@@ -70,12 +70,12 @@ class Thermostat(VehicleCoordinatorBaseEntity, ClimateEntity):
             HVACMode.HEAT_COOL,
         ]
         self._attr_target_temperature_step = PRECISION_WHOLE
-        self._attr_temperature_unit = UnitOfTemperature.FAHRENHEIT
+        self._attr_native_temperature_unit = UnitOfTemperature.FAHRENHEIT
         self._attr_max_temp = TEMPERATURE_MAX
         self._attr_min_temp = TEMPERATURE_MIN
 
     @property
-    def target_temperature(self) -> int:
+    def native_target_temperature(self) -> int:
         """Return the target temperature."""
         return self.coordinator.desired_temperature
 

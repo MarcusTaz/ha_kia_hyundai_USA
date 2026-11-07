@@ -83,7 +83,6 @@ class KiaUvoConfigFlowHandler(config_entries.ConfigFlow):
     """Handle config flow for Kia/Hyundai/Genesis US."""
 
     VERSION = CONFIG_FLOW_VERSION
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
     def __init__(self):
         """Initialize config flow."""
