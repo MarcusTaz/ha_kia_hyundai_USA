@@ -746,7 +746,7 @@ class UsGenesis:
             defrost: bool,
             climate: bool,
             heating: bool,
-            steering_wheel_heat: int = 0,
+            steering_wheel_heat: int | None = None,
             duration: int | None = None,
             driver_seat: SeatSettings | None = None,
             passenger_seat: SeatSettings | None = None,

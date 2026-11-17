@@ -25,6 +25,19 @@ STEERING_WHEEL_OPTIONS = {
     2: ["Off", "Low", "High"],
 }
 
+
+
+def _select_option_to_value(option: str) -> int | None:
+    """Map a select option to a steering wheel heat value.
+
+    "Off" keeps the existing behavior where the steering wheel follows the
+    heating accessories switch.
+    """
+    if option == "Off":
+        return None
+    return STEERING_WHEEL_STR_TO_VALUE.get(option)
+
+
 OFF = ["Off"]
 HEAT_OPTIONS = {
     3: ["High Heat", "Medium Heat", "Low Heat"],
@@ -213,10 +226,10 @@ class SteeringWheelHeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, Restor
         _LOGGER.info(
             "STEERING WHEEL: Setting to %s (value=%s) on coordinator for %s",
             option,
-            STEERING_WHEEL_STR_TO_VALUE.get(option, 0),
+            _select_option_to_value(option),
             self.coordinator.vehicle_name,
         )
-        self.coordinator.desired_steering_wheel_heat = STEERING_WHEEL_STR_TO_VALUE.get(option, 0)
+        self.coordinator.desired_steering_wheel_heat = _select_option_to_value(option)
         _LOGGER.info("STEERING WHEEL: Verified value is now: %s", self.coordinator.desired_steering_wheel_heat)
         self._attr_current_option = option
         self.async_write_ha_state()
@@ -240,6 +253,6 @@ class SteeringWheelHeatSelect(VehicleCoordinatorBaseEntity, SelectEntity, Restor
             else:
                 self._attr_current_option = "Off"
 
-        self.coordinator.desired_steering_wheel_heat = STEERING_WHEEL_STR_TO_VALUE.get(
-            self._attr_current_option or "Off", 0
+        self.coordinator.desired_steering_wheel_heat = _select_option_to_value(
+            self._attr_current_option or "Off"
         )

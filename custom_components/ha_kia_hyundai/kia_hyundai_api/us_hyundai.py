@@ -84,7 +84,7 @@ def _parse_supported_levels(supported_levels_str: str) -> dict:
 _seat_level_mappings: dict[str, dict] = {}
 
 
-def _get_heating1_value(steering_wheel_heat: int, heating: bool) -> int:
+def _get_heating1_value(steering_wheel_heat: int | None, heating: bool) -> int:
     """Calculate heating1 API value from steering wheel and heating settings.
 
     Hyundai BlueLink API heating1 values:
@@ -93,6 +93,7 @@ def _get_heating1_value(steering_wheel_heat: int, heating: bool) -> int:
     - 3 = Steering Wheel Only (USA only)
     - 4 = Steering Wheel + Side/Back Defrosters
     """
+    steering_wheel_heat = steering_wheel_heat or 0
     if steering_wheel_heat > 0 and heating:
         return 4  # Steering wheel + defrosters
     elif steering_wheel_heat > 0:
@@ -727,7 +728,7 @@ class UsHyundai:
             defrost: bool,
             climate: bool,
             heating: bool,
-            steering_wheel_heat: int = 0,
+            steering_wheel_heat: int | None = None,
             duration: int | None = None,
             driver_seat: SeatSettings | None = None,
             passenger_seat: SeatSettings | None = None,

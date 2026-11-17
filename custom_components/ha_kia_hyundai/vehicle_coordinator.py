@@ -46,7 +46,7 @@ class VehicleCoordinator(DataUpdateCoordinator):
     climate_desired_defrost: bool = False
     climate_desired_heating_acc: bool = False
     desired_temperature: int = 72  # Default temperature in Fahrenheit
-    desired_steering_wheel_heat: int = 0  # 0=off, 1=low/on, 2=high
+    desired_steering_wheel_heat: int | None = None  # None=follow heating, 0=off, 1=low/on, 2=high
     desired_driver_seat_comfort: SeatSettings | None = None
     desired_passenger_seat_comfort: SeatSettings | None = None
     desired_left_rear_seat_comfort: SeatSettings | None = None

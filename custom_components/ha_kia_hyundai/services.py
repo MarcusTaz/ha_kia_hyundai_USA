@@ -73,7 +73,7 @@ def async_setup_services(hass: HomeAssistant):
         }
         if duration is not None:
             kwargs["duration"] = duration
-        # Only include steering wheel heat if specified (otherwise it follows heating)
+        # Auto (or not set) lets the steering wheel follow heating
         if steering_wheel_heat is not None:
             kwargs["steering_wheel_heat"] = STEERING_WHEEL_STR_TO_VALUE[steering_wheel_heat]
 
