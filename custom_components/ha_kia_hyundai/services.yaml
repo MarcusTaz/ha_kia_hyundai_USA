@@ -34,6 +34,17 @@ start_climate:
       default: false
       selector:
         boolean:
+    steering_wheel_heat:
+      required: false
+      example: "On"
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - "Off"
+            - "On"
+            - "Low"
+            - "High"
     duration:
       required: false
       example: 10

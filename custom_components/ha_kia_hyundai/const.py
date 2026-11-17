@@ -93,3 +93,11 @@ STR_TO_SEAT_SETTING = {
     "Medium Cool": SeatSettings.CoolMedium,
     "Low Cool": SeatSettings.CoolLow,
 }
+
+# Map steering wheel option strings to API values
+STEERING_WHEEL_STR_TO_VALUE = {
+    "Off": 0,
+    "On": 1,
+    "Low": 1,
+    "High": 2,
+}

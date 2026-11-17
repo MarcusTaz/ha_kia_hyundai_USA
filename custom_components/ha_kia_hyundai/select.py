@@ -13,7 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import VehicleCoordinator, get_all_coordinators
-from .const import SEAT_STATUS, STR_TO_SEAT_SETTING
+from .const import SEAT_STATUS, STEERING_WHEEL_STR_TO_VALUE, STR_TO_SEAT_SETTING
 from .vehicle_coordinator_base_entity import VehicleCoordinatorBaseEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,14 +23,6 @@ _LOGGER = logging.getLogger(__name__)
 STEERING_WHEEL_OPTIONS = {
     1: ["Off", "On"],
     2: ["Off", "Low", "High"],
-}
-
-# Map steering wheel option strings to API values
-STEERING_WHEEL_STR_TO_VALUE = {
-    "Off": 0,
-    "On": 1,
-    "Low": 1,
-    "High": 2,
 }
 
 OFF = ["Off"]

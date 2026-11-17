@@ -71,6 +71,10 @@
           "name": "Heating Accessories",
           "description": "Turn on heating accessories."
         },
+        "steering_wheel_heat": {
+          "name": "Steering Wheel Heat",
+          "description": "Steering wheel heat level. Use On for vehicles with a single level. If not set or Off, the steering wheel follows Heating Accessories."
+        },
         "duration": {
           "name": "Duration",
           "description": "How long to run climate in minutes. Vehicle limits vary by model (typically 5-30 minutes)."
