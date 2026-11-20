@@ -16,7 +16,7 @@ import asyncio
 import logging
 from datetime import timedelta
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.const import (
     CONF_PASSWORD,
     CONF_USERNAME,
@@ -24,6 +24,7 @@ from homeassistant.const import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 # Use embedded API libraries
@@ -231,6 +232,50 @@ async def _get_or_create_api_connection(
         return api_connection
 
 
+def _vehicle_ids(vehicles: list) -> set[str]:
+    """Return ids from the stored vehicle list."""
+    return {vehicle["id"] for vehicle in vehicles if vehicle.get("id")}
+
+
+def _vehicle_id_from_device(device_entry: dr.DeviceEntry) -> str | None:
+    """Return the vehicle id stored on one of our devices."""
+    for identifier in device_entry.identifiers:
+        if identifier[0] == DOMAIN:
+            return identifier[1]
+    return None
+
+
+@callback
+def async_remove_stale_vehicle_devices(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    current_vehicle_ids: set[str],
+) -> None:
+    """Remove devices for vehicles that are no longer on the account.
+
+    An empty id set means the account listing failed or came back empty.
+    Removing devices in that case would delete cars that are still active.
+    """
+    if not current_vehicle_ids:
+        _LOGGER.warning(
+            "Skipping stale vehicle cleanup because the current vehicle list is empty"
+        )
+        return
+
+    device_registry = dr.async_get(hass)
+    for device in dr.async_entries_for_config_entry(
+        device_registry, config_entry.entry_id
+    ):
+        vehicle_id = _vehicle_id_from_device(device)
+        if vehicle_id is None or vehicle_id in current_vehicle_ids:
+            continue
+        _LOGGER.info(
+            "Removing device for vehicle %s; it is no longer on the account",
+            vehicle_id,
+        )
+        device_registry.async_remove_device(device.id)
+
+
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Set up Kia/Hyundai/Genesis US from a config entry.
 
@@ -268,7 +313,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
             pin=pin,
         )
 
-        if api_connection.vehicles is None:
+        # None or [] means the listing failed or returned nothing. Do not
+        # replace the stored vehicles or delete devices from that result.
+        if not api_connection.vehicles:
             raise ConfigEntryError("No vehicles found in account")
 
         # Update stored tokens if they changed
@@ -323,6 +370,11 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
 
         if data_changed:
             hass.config_entries.async_update_entry(config_entry, data=new_data)
+
+        # The list above is only replaced after a non-empty account listing.
+        async_remove_stale_vehicle_devices(
+            hass, config_entry, _vehicle_ids(vehicles_config)
+        )
 
         # Create coordinators for all vehicles
         coordinators: dict[str, VehicleCoordinator] = {}
@@ -406,6 +458,25 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
             hass.data.pop(DOMAIN, None)
 
     return unload_ok
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Allow deleting a vehicle device that is no longer on the account.
+
+    A vehicle that is still in the stored list is kept. Deleting it would
+    only remove the device until the next reload creates it again. An empty
+    stored list is not treated as "every vehicle was sold".
+    """
+    vehicle_id = _vehicle_id_from_device(device_entry)
+    if vehicle_id is None:
+        return False
+
+    current_vehicle_ids = _vehicle_ids(config_entry.data.get(CONF_VEHICLES, []))
+    if not current_vehicle_ids:
+        return False
+    return vehicle_id not in current_vehicle_ids
 
 
 def get_coordinator(hass: HomeAssistant, vehicle_id: str) -> VehicleCoordinator | None:
