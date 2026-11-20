@@ -18,7 +18,7 @@ import certifi
 import time
 
 from functools import partial
-from aiohttp import ClientSession, ClientResponse
+from aiohttp import ClientError, ClientSession, ClientResponse
 
 from .errors import AuthError, HATARemoteVehicleStatusError, PINLockedError
 from .const import (
@@ -118,6 +118,13 @@ def _seat_settings_genesis(level: SeatSettings | None, vehicle_id: str = "") -> 
     return result
 
 
+def _is_genesis_pin_error(exc: BaseException) -> bool:
+    """Return True when Genesis rejected or locked the account PIN."""
+    if isinstance(exc, PINLockedError):
+        return True
+    return "PIN" in str(exc).upper()
+
+
 class UsGenesis:
     """Genesis Connected Services USA API client (PIN-based authentication)."""
 
@@ -159,6 +166,8 @@ class UsGenesis:
         self.token_expires_at = None
         self._hata_force_refresh_attempted: set[str] = set()
         self._enrollment_details_cache: dict | None = None
+        # Poll URLs that already failed with a PIN error. Do not request them again.
+        self._background_poll_pin_blocked: set[str] = set()
         if client_session is None:
             self.api_session = ClientSession(raise_for_status=False)
         else:
@@ -341,6 +350,41 @@ class UsGenesis:
             ssl=await self.get_ssl_context()
         )
 
+    async def _get_for_background_poll(
+            self,
+            url: str,
+            headers: dict,
+    ) -> ClientResponse:
+        """GET used by background polling.
+
+        A URL that fails with a PIN error is not requested again. Genesis
+        locks the account PIN after repeated failures (IDM_PIN_607).
+        """
+        if url in self._background_poll_pin_blocked:
+            _LOGGER.debug(
+                "Skipping Genesis poll request after a previous PIN error: %s",
+                url,
+            )
+            raise PINLockedError(
+                f"Not retrying Genesis poll request after a PIN error: {url}"
+            )
+
+        try:
+            return await self._get_request_with_logging_and_errors_raised(
+                url=url,
+                headers=headers,
+            )
+        except ClientError as err:
+            if _is_genesis_pin_error(err):
+                self._background_poll_pin_blocked.add(url)
+                _LOGGER.error(
+                    "Genesis PIN error on %s during polling; "
+                    "this request will not be retried until Home Assistant is restarted: %s",
+                    url,
+                    err,
+                )
+            raise
+
     async def login(self):
         """Login to Genesis Connected Services with username/password (PIN used for commands)."""
         _LOGGER.info("========== GENESIS LOGIN START ==========")
@@ -447,16 +491,25 @@ class UsGenesis:
                 return vehicle
         raise ValueError(f"Vehicle {vehicle_id} not found")
 
-    async def _get_enrollment_details(self, force_refresh: bool = False) -> dict:
+    async def _get_enrollment_details(
+            self,
+            force_refresh: bool = False,
+            *,
+            background_poll: bool = False,
+    ) -> dict:
         """Return cached Genesis enrollment metadata."""
         if self._enrollment_details_cache is not None and not force_refresh:
             return self._enrollment_details_cache
 
         url = GENESIS_API_URL_BASE + "enrollment/details/" + self.username
-        response = await self._get_request_with_logging_and_errors_raised(
-            url=url,
-            headers=self._get_authenticated_headers(),
-        )
+        headers = self._get_authenticated_headers()
+        if background_poll:
+            response = await self._get_for_background_poll(url=url, headers=headers)
+        else:
+            response = await self._get_request_with_logging_and_errors_raised(
+                url=url,
+                headers=headers,
+            )
         self._enrollment_details_cache = await response.json()
         return self._enrollment_details_cache
 
@@ -469,7 +522,7 @@ class UsGenesis:
 
         url = GENESIS_API_URL_BASE + "rcs/rvs/vehicleStatus"
         try:
-            response = await self._get_request_with_logging_and_errors_raised(
+            response = await self._get_for_background_poll(
                 url=url,
                 headers=headers,
             )
@@ -483,7 +536,7 @@ class UsGenesis:
             )
             force_headers = dict(headers)
             force_headers["REFRESH"] = "true"
-            response = await self._get_request_with_logging_and_errors_raised(
+            response = await self._get_for_background_poll(
                 url=url,
                 headers=force_headers,
             )
@@ -491,7 +544,7 @@ class UsGenesis:
         _LOGGER.debug("Genesis vehicle status response: %s", response_json)
 
         # Enrollment details are metadata/capabilities; avoid polling this endpoint every refresh.
-        details_json = await self._get_enrollment_details()
+        details_json = await self._get_enrollment_details(background_poll=True)
 
         vehicle_details = {}
         seat_configs = []
@@ -556,29 +609,13 @@ class UsGenesis:
 
         vehicle_status = response_json.get("vehicleStatus", {})
 
-        # Get location; GV60 may expose coordinates in vehicleStatus while findMyCar times out.
-        location = None
-        try:
-            loc_url = GENESIS_API_URL_BASE + "rcs/rfc/findMyCar"
-            _LOGGER.debug("Genesis findMyCar URL: %s", loc_url)
-            loc_response = await asyncio.wait_for(
-                self._get_request_with_logging_and_errors_raised(
-                    url=loc_url,
-                    headers=headers,
-                ),
-                timeout=10,
-            )
-            loc_json = await loc_response.json()
-            if loc_json.get("coord"):
-                location = loc_json
-        except Exception as e:
-            _LOGGER.debug("Failed to get location: %s", e)
-
-        if location is None:
-            status_location = vehicle_status.get("vehicleLocation") or {}
-            if status_location.get("coord"):
-                _LOGGER.debug("Using Genesis vehicleStatus location fallback")
-                location = status_location
+        # Location is taken only from this vehicleStatus payload. findMyCar
+        # checks the account PIN; calling it on every poll locked Genesis PINs
+        # (IDM_PIN_607). When the status payload has no coordinates, location
+        # stays unset rather than making that call.
+        location = vehicle_status.get("vehicleLocation")
+        if not (isinstance(location, dict) and location.get("coord")):
+            location = None
 
         # Transform to match Kia format
         transformed = {
