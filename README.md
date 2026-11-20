@@ -9,11 +9,10 @@ A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered
 
 ## Latest Update
 
-### v3.3.5 - Home Assistant 2026.11
+### v3.3.6 - Remove sold vehicles + Genesis PIN-lock fix
 
-- Updates climate to the current temperature names so Home Assistant 2026.11 no longer warns about them.
-- Removes the unused cloud-polling connection class. The integration still polls the cloud.
-- Requires Home Assistant 2026.11.0 or newer. HACS hides this update from older installations.
+- Removes vehicles that are no longer on the account after a reload, and lets you delete those devices.
+- Stops Genesis background polling from calling findMyCar, which was locking the PIN.
 
 ## Requirements
 
