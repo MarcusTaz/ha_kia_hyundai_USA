@@ -182,6 +182,10 @@ Frequent API calls can wake your vehicle and drain the 12V battery. The default 
 - Ensure your connected services subscription is active
 - Some older vehicles with pre-ccOS infotainment may not be compatible
 
+### Sold or Removed Vehicles
+
+Removed cars are cleaned up automatically after a reload. If a sold car still appears in the Kia, Hyundai, or Genesis app account, it will keep showing up here, so remove it from the app account first.
+
 ### Commands Not Working
 
 - Check that the vehicle has cellular connectivity
