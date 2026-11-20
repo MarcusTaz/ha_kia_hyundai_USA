@@ -9,10 +9,9 @@ A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered
 
 ## Latest Update
 
-### v3.3.6 - Remove sold vehicles + Genesis PIN-lock fix
+### v3.3.7 - Steering wheel heat option for start climate
 
-- Removes vehicles that are no longer on the account after a reload, and lets you delete those devices.
-- Stops Genesis background polling from calling findMyCar, which was locking the PIN.
+- The `start_climate` action now has an optional steering wheel heat setting (Auto, Off, On, Low, High). Auto keeps the old behavior. Thanks @kadaan.
 
 ## Requirements
 
