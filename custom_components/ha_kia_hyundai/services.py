@@ -4,7 +4,7 @@ from homeassistant.const import ATTR_DEVICE_ID
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import device_registry
 
-from .const import DOMAIN, STR_TO_SEAT_SETTING
+from .const import DOMAIN, STEERING_WHEEL_STR_TO_VALUE, STR_TO_SEAT_SETTING
 from .vehicle_coordinator import VehicleCoordinator
 
 # Key for coordinators in hass.data
@@ -17,6 +17,7 @@ SERVICE_ATTRIBUTE_CLIMATE = "climate"
 SERVICE_ATTRIBUTE_TEMPERATURE = "temperature"
 SERVICE_ATTRIBUTE_DEFROST = "defrost"
 SERVICE_ATTRIBUTE_HEATING = "heating"
+SERVICE_ATTRIBUTE_STEERING_WHEEL_HEAT = "steering_wheel_heat"
 SERVICE_ATTRIBUTE_DURATION = "duration"
 SERVICE_ATTRIBUTE_DRIVER_SEAT = "driver_seat"
 SERVICE_ATTRIBUTE_PASSENGER_SEAT = "passenger_seat"
@@ -38,6 +39,7 @@ def async_setup_services(hass: HomeAssistant):
         set_temp = call.data.get(SERVICE_ATTRIBUTE_TEMPERATURE)
         defrost = call.data.get(SERVICE_ATTRIBUTE_DEFROST)
         heating = call.data.get(SERVICE_ATTRIBUTE_HEATING)
+        steering_wheel_heat = call.data.get(SERVICE_ATTRIBUTE_STEERING_WHEEL_HEAT)
         duration = call.data.get(SERVICE_ATTRIBUTE_DURATION)
         driver_seat = call.data.get(SERVICE_ATTRIBUTE_DRIVER_SEAT, None)
         passenger_seat = call.data.get(SERVICE_ATTRIBUTE_PASSENGER_SEAT, None)
@@ -71,6 +73,9 @@ def async_setup_services(hass: HomeAssistant):
         }
         if duration is not None:
             kwargs["duration"] = duration
+        # Auto (or not set) lets the steering wheel follow heating
+        if steering_wheel_heat is not None:
+            kwargs["steering_wheel_heat"] = STEERING_WHEEL_STR_TO_VALUE[steering_wheel_heat]
 
         await coordinator.api_connection.start_climate(**kwargs)
         coordinator.async_update_listeners()

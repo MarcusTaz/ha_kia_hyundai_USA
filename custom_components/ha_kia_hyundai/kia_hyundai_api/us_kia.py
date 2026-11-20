@@ -573,7 +573,7 @@ class UsKia:
             defrost: bool,
             climate: bool,
             heating: bool,
-            steering_wheel_heat: int = 0,
+            steering_wheel_heat: int | None = None,
             duration: int | None = None,
             driver_seat: SeatSettings | None = None,
             passenger_seat: SeatSettings | None = None,
@@ -591,6 +591,12 @@ class UsKia:
             raise ActionAlreadyInProgressError("{} still pending".format(self.last_action["name"]))
         url = API_URL_BASE + "rems/start"
         vehicle_key = await self.find_vehicle_key(vehicle_id=vehicle_id)
+        # None = follow the heating accessories setting (legacy behavior)
+        if steering_wheel_heat is None:
+            steering_wheel = int(heating)
+            steering_wheel_heat = 0
+        else:
+            steering_wheel = 1 if steering_wheel_heat > 0 else 0
         body = {
             "remoteClimate": {
                 "airCtrl": climate,
@@ -602,7 +608,7 @@ class UsKia:
                 "heatingAccessory": {
                     "rearWindow": int(heating),
                     "sideMirror": int(heating),
-                    "steeringWheel": 1 if steering_wheel_heat > 0 else int(heating),
+                    "steeringWheel": steering_wheel,
                     "steeringWheelStep": steering_wheel_heat,  # 0=off, 1=low, 2=high
                 },
             }
