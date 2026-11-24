@@ -8,9 +8,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from . import get_all_coordinators
-from .const import DOMAIN
+from .const import CONF_DEVICE_ID, CONF_PIN, CONF_REFRESH_TOKEN, DOMAIN
 
-TO_REDACT = {CONF_USERNAME, CONF_PASSWORD, CONF_UNIQUE_ID, "vehicle_identifier"}
+TO_REDACT = {
+    CONF_USERNAME,
+    CONF_PASSWORD,
+    CONF_PIN,
+    CONF_REFRESH_TOKEN,
+    CONF_DEVICE_ID,
+    CONF_UNIQUE_ID,
+    "vehicle_identifier",
+}
 TO_REDACT_MAPPED = {
     "identifier",
     "vin",

@@ -13,6 +13,10 @@ SENSITIVE_FIELD_NAMES = [
     "lon",
     "blueLinkServicePin",
     "accessToken",
+    "access_token",
+    "refresh_token",
+    "rmtoken",
+    "otpkey",
 ]
 
 # Kia USA API (iOS app headers)
