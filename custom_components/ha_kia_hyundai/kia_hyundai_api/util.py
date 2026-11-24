@@ -5,10 +5,15 @@ from .const import SENSITIVE_FIELD_NAMES
 _LOGGER = logging.getLogger(__name__)
 
 
+# Keys are compared in lower case, so "blueLinkServicePin" matches whatever
+# case the API or a header uses.
+_SENSITIVE_FIELD_NAMES_LOWER = frozenset(name.lower() for name in SENSITIVE_FIELD_NAMES)
+
+
 def clean_dictionary_for_logging(dictionary: dict[str, any]) -> dict[str, any]:
     mutable_dictionary = dictionary.copy()
     for key in dictionary:
-        if key.lower() in SENSITIVE_FIELD_NAMES:
+        if key.lower() in _SENSITIVE_FIELD_NAMES_LOWER:
             mutable_dictionary[key] = "***"
         if type(mutable_dictionary[key]) is dict:
             mutable_dictionary[key] = clean_dictionary_for_logging(
