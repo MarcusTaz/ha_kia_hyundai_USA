@@ -9,9 +9,10 @@ A Home Assistant integration for **Kia, Hyundai, and Genesis vehicles registered
 
 ## Latest Update
 
-### v3.3.7 - Steering wheel heat option for start climate
+### v3.3.8 - Genesis odometer updates + PIN privacy fix
 
-- The `start_climate` action now has an optional steering wheel heat setting (Auto, Off, On, Low, High). Auto keeps the old behavior. Thanks @kadaan.
+- Genesis: the odometer now updates after a drive instead of only when Home Assistant restarts (fixes #48). Thanks @CoreyJ87.
+- Privacy: the PIN, device id and refresh token are now redacted in the diagnostics download, and login tokens are masked in debug logs. Thanks @CoreyJ87.
 
 ## Requirements
 
