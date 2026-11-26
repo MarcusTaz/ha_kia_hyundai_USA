@@ -74,7 +74,10 @@ class _JsonResponse:
         return self._payload
 
 
-def _vehicle_status(location: dict | None = None) -> dict:
+def _vehicle_status(
+    location: dict | None = None,
+    date_time: str = "2026-11-20T12:00:00Z",
+) -> dict:
     status = {
         "airCtrlOn": False,
         "defrost": False,
@@ -83,7 +86,7 @@ def _vehicle_status(location: dict | None = None) -> dict:
         "doorLock": True,
         "doorOpen": {},
         "lowFuelLight": False,
-        "dateTime": "2026-11-20T12:00:00Z",
+        "dateTime": date_time,
         "battery": {"batSoc": 80},
     }
     if location is not None:
@@ -91,7 +94,7 @@ def _vehicle_status(location: dict | None = None) -> dict:
     return {"vehicleStatus": status}
 
 
-def _enrollment() -> dict:
+def _enrollment(odometer: str = "10") -> dict:
     return {
         "enrolledVehicleDetails": [
             {
@@ -99,7 +102,7 @@ def _enrollment() -> dict:
                     "regid": "reg1",
                     "modelYear": "2026",
                     "modelCode": "GV70",
-                    "odometer": "10",
+                    "odometer": odometer,
                     "seatConfigurations": {"seatConfigs": []},
                     "steeringWheelHeatCapable": "NO",
                     "sideMirrorHeatCapable": "NO",
@@ -132,6 +135,10 @@ def _ready_api() -> UsGenesis:
         }
     ]
     return api
+
+
+def _mileage(data: dict) -> str:
+    return data["vehicleConfig"]["vehicleDetail"]["vehicle"]["mileage"]
 
 
 class GenesisPollingTests(unittest.IsolatedAsyncioTestCase):
@@ -280,6 +287,103 @@ class GenesisPollingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(calls), 2)
         self._assert_no_find_my_car(calls)
+
+
+    async def test_enrollment_refreshes_when_the_car_reports_new_status(self):
+        api = _ready_api()
+        state = {"date_time": "2026-11-20T12:00:00Z", "odometer": "10"}
+
+        def handler(url):
+            if url.endswith("rcs/rvs/vehicleStatus"):
+                return _JsonResponse(_vehicle_status(date_time=state["date_time"]))
+            if "enrollment/details/" in url:
+                return _JsonResponse(_enrollment(odometer=state["odometer"]))
+            raise AssertionError(f"unexpected URL {url}")
+
+        calls = self._install_get(api, handler)
+
+        first = await api.get_cached_vehicle_status("reg1")
+        # The car drives and sends a new status report.
+        state["date_time"] = "2026-11-20T13:30:00Z"
+        state["odometer"] = "42"
+        second = await api.get_cached_vehicle_status("reg1")
+
+        enrollment_calls = [url for url in calls if "enrollment/details/" in url]
+        self.assertEqual(len(enrollment_calls), 2)
+        self.assertEqual(_mileage(first), "10")
+        self.assertEqual(_mileage(second), "42")
+
+    async def test_enrollment_stays_cached_while_status_is_unchanged(self):
+        api = _ready_api()
+
+        def handler(url):
+            if url.endswith("rcs/rvs/vehicleStatus"):
+                return _JsonResponse(_vehicle_status())
+            if "enrollment/details/" in url:
+                return _JsonResponse(_enrollment())
+            raise AssertionError(f"unexpected URL {url}")
+
+        calls = self._install_get(api, handler)
+
+        for _ in range(3):
+            await api.get_cached_vehicle_status("reg1")
+
+        enrollment_calls = [url for url in calls if "enrollment/details/" in url]
+        self.assertEqual(len(enrollment_calls), 1)
+
+    async def test_failed_enrollment_refresh_keeps_the_cached_copy(self):
+        api = _ready_api()
+        state = {"date_time": "2026-11-20T12:00:00Z", "fail": False}
+
+        def handler(url):
+            if url.endswith("rcs/rvs/vehicleStatus"):
+                return _JsonResponse(_vehicle_status(date_time=state["date_time"]))
+            if "enrollment/details/" in url:
+                if state["fail"]:
+                    return ClientError("BlueLink API error: please try again later")
+                return _JsonResponse(_enrollment(odometer="10"))
+            raise AssertionError(f"unexpected URL {url}")
+
+        self._install_get(api, handler)
+
+        await api.get_cached_vehicle_status("reg1")
+        state["date_time"] = "2026-11-20T13:30:00Z"
+        state["fail"] = True
+        data = await api.get_cached_vehicle_status("reg1")
+
+        self.assertEqual(_mileage(data), "10")
+
+    async def test_pin_error_on_enrollment_refresh_keeps_polling_and_is_not_repeated(self):
+        api = _ready_api()
+        state = {"date_time": "2026-11-20T12:00:00Z", "pin_locked": False}
+
+        def handler(url):
+            if url.endswith("rcs/rvs/vehicleStatus"):
+                return _JsonResponse(_vehicle_status(date_time=state["date_time"]))
+            if "enrollment/details/" in url:
+                if state["pin_locked"]:
+                    return PINLockedError(
+                        "BlueLink PIN locked: Your PIN has been locked for 5 minutes."
+                    )
+                return _JsonResponse(_enrollment(odometer="10"))
+            raise AssertionError(f"unexpected URL {url}")
+
+        calls = self._install_get(api, handler)
+
+        await api.get_cached_vehicle_status("reg1")
+        state["pin_locked"] = True
+        state["date_time"] = "2026-11-20T13:30:00Z"
+        second = await api.get_cached_vehicle_status("reg1")
+        state["date_time"] = "2026-11-20T15:00:00Z"
+        third = await api.get_cached_vehicle_status("reg1")
+
+        enrollment_calls = [url for url in calls if "enrollment/details/" in url]
+        status_calls = [url for url in calls if url.endswith("rcs/rvs/vehicleStatus")]
+        # One good fetch, one that hit the PIN error, then no further requests.
+        self.assertEqual(len(enrollment_calls), 2)
+        self.assertEqual(len(status_calls), 3)
+        self.assertEqual(_mileage(second), "10")
+        self.assertEqual(_mileage(third), "10")
 
 
 if __name__ == "__main__":

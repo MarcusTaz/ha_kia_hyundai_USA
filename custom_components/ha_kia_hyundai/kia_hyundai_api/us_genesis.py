@@ -168,6 +168,7 @@ class UsGenesis:
         self._enrollment_details_cache: dict | None = None
         # Poll URLs that already failed with a PIN error. Do not request them again.
         self._background_poll_pin_blocked: set[str] = set()
+        self._last_status_datetime: dict[str, str | None] = {}
         if client_session is None:
             self.api_session = ClientSession(raise_for_status=False)
         else:
@@ -543,8 +544,28 @@ class UsGenesis:
         response_json = await response.json()
         _LOGGER.debug("Genesis vehicle status response: %s", response_json)
 
-        # Enrollment details are metadata/capabilities; avoid polling this endpoint every refresh.
-        details_json = await self._get_enrollment_details(background_poll=True)
+        # Enrollment details are mostly metadata/capabilities, so avoid polling this
+        # endpoint every refresh. They also carry the odometer, so refresh them when
+        # the car has sent a new status report. If that fails, keep the cached copy
+        # and try again on the next new report, not on every poll.
+        status_datetime = response_json.get("vehicleStatus", {}).get("dateTime")
+        previous_datetime = self._last_status_datetime.get(vehicle_id)
+        self._last_status_datetime[vehicle_id] = status_datetime
+        refresh_details = (
+            previous_datetime is not None and status_datetime != previous_datetime
+        )
+        try:
+            details_json = await self._get_enrollment_details(
+                force_refresh=refresh_details,
+                background_poll=True,
+            )
+        except Exception as e:
+            if self._enrollment_details_cache is None:
+                raise
+            _LOGGER.warning(
+                "Genesis enrollment details refresh failed; using cached copy: %s", e
+            )
+            details_json = self._enrollment_details_cache
 
         vehicle_details = {}
         seat_configs = []
